@@ -1,0 +1,421 @@
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikMain.hs =====
+module RubikMain where
+
+import Prelude
+import System.IO (readFile, putStrLn)
+import System.Environment (getArgs)
+import RubikTypes
+import RubikParser
+import RubikSolver
+import RubikUtils
+
+-- | Główna funkcja 'main' - wczytuje nazwę pliku z argumentów,
+--   czyta zawartość, parsuje kostkę i uruchamia solver.
+main :: IO ()
+main = do
+  args <- getArgs
+  case args of
+    (fileName:_) -> do
+      content <- readFile fileName
+      let cubeParsed = parseRubikFile content
+      let (finalCube, moves) = solveEntireCube cubeParsed
+      putStrLn "=== WYNIK ==="
+      printCube finalCube
+      putStrLn "\n=== LISTA RUCHÓW ==="
+      print moves
+    _ -> putStrLn "Użycie: ./RubikMain2 <plik_z_kostka>"
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikParser.hs =====
+module RubikParser
+  ( parseRubikFile
+  ) where
+
+import Prelude
+import RubikTypes (CubeX, FaceX, FaceSide(..), ColorX(..))
+import RubikUtils (replaceFace, emptyCubeX)
+
+{-
+  Moduł odpowiedzialny za wczytanie i sparsowanie pliku.
+  Zakładamy, że plik zawiera 6 linii w postaci:
+     Front White White White White White White White White White
+     Right ...
+     Back ...
+     Left ...
+     Up ...
+     Down ...
+  Gdzie w jednej linii jest nazwa ścianki + 9 kolorów w postaci stringów
+-}
+
+parseRubikFile :: String -> CubeX
+parseRubikFile contents =
+  let ls = lines contents
+      c0 = emptyCubeX
+  in fillCube c0 ls
+
+-- | Wypełnia pustą kostkę danymi z linii.
+fillCube :: CubeX -> [String] -> CubeX
+fillCube cube [] = cube
+fillCube cube (l:ls) =
+  let faceParsed = parseLine l
+      newCube    = insertFace cube faceParsed
+  in fillCube newCube ls
+
+parseLine :: String -> FaceX
+parseLine line =
+  let ws = words line
+  in case ws of
+       (sideName : rest) ->
+         let side   = parseFaceSide sideName
+             colors = map parseColorX rest
+         in (side, colors)
+       _ -> error "Linia niepoprawna"
+
+parseFaceSide :: String -> FaceSide
+parseFaceSide nm =
+  case nm of
+    "Front" -> FFront
+    "Back"  -> FBack
+    "Left"  -> FLeft
+    "Right" -> FRight
+    "Up"    -> FUp
+    "Down"  -> FDown
+    _       -> error "Nieznana nazwa ścianki"
+
+parseColorX :: String -> ColorX
+parseColorX str =
+  case str of
+    "White"  -> CWhite
+    "Yellow" -> CYellow
+    "Red"    -> CRed
+    "Orange" -> COrange
+    "Green"  -> CGreen
+    "Blue"   -> CBlue
+    _        -> error ("Nieznany kolor: " ++ str)
+
+-- | Wstawia gotową ściankę (side, [ColorX]) do kostki.
+insertFace :: CubeX -> FaceX -> CubeX
+insertFace cube face@(side, _) =
+  replaceFace side face cube
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikRotations.hs =====
+module RubikRotations
+  ( makeMove
+  , makeMoves
+  , addMoveToLog
+  ) where
+
+import Prelude
+import RubikTypes
+
+{-
+  W tym module definiujemy, jak wygląda transformacja kostki
+  przy wykonaniu konkretnego ruchu MU, MU', MD, MD' itd.
+
+  Każda z funkcji 'applyU', 'applyU'' itp.:
+    - zmienia zawartość ścianki górnej (FUp) zgodnie z obrotem 90° w lewo/prawo,
+    - przenosi kolory między front, right, back, left w "górnym wierszu".
+
+  Podobnie D, L, R, F, B – tyle że w innych miejscach.
+
+  Na końcu 'makeMove' jest dispatch: sprawdza, jaki ruch wykonać, i stosuje daną funkcję.
+-}
+
+makeMove :: MoveX -> CubeX -> CubeX
+makeMove mv cube =
+  case mv of
+    MU  -> applyU cube
+    MU' -> applyU' cube
+    MD  -> applyD cube
+    MD' -> applyD' cube
+    ML  -> applyL cube
+    ML' -> applyL' cube
+    MR  -> applyR cube
+    MR' -> applyR' cube
+    MF  -> applyF cube
+    MF' -> applyF' cube
+    MB  -> applyB cube
+    MB' -> applyB' cube
+
+-- | Wykonuje całą listę ruchów na kostce, sekwencyjnie.
+makeMoves :: [MoveX] -> CubeX -> CubeX
+makeMoves moves cube = foldl (\acc mv -> makeMove mv acc) cube moves
+
+-- | Dopisuje ruch do historii i aktualizuje kostkę.
+addMoveToLog :: MoveX -> CubeWithLog2 -> CubeWithLog2
+addMoveToLog mv (cb, past) = (makeMove mv cb, past ++ [mv])
+
+--------------------------------------
+-- Szkielet do wypełnienia:
+--------------------------------------
+applyU :: CubeX -> CubeX
+applyU c = c  -- TODO: implementacja
+
+applyU' :: CubeX -> CubeX
+applyU' c = c -- TODO
+
+applyD :: CubeX -> CubeX
+applyD c = c  -- TODO
+
+applyD' :: CubeX -> CubeX
+applyD' c = c -- TODO
+
+applyL :: CubeX -> CubeX
+applyL c = c -- TODO
+
+applyL' :: CubeX -> CubeX
+applyL' c = c -- TODO
+
+applyR :: CubeX -> CubeX
+applyR c = c -- TODO
+
+applyR' :: CubeX -> CubeX
+applyR' c = c -- TODO
+
+applyF :: CubeX -> CubeX
+applyF c = c -- TODO
+
+applyF' :: CubeX -> CubeX
+applyF' c = c -- TODO
+
+applyB :: CubeX -> CubeX
+applyB c = c -- TODO
+
+applyB' :: CubeX -> CubeX
+applyB' c = c -- TODO
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikSolver.hs =====
+module RubikSolver
+  ( solveEntireCube
+  ) where
+
+import Prelude
+import RubikTypes
+import Stage1_WhiteCross
+import Stage2_WhiteCorners
+import Stage3_MiddleLayer
+import Stage4_LastLayer
+
+-- | Główny solver - wywołuje 4 fazy po kolei.
+--   Zwraca finalną kostkę i listę wykonanych ruchów.
+solveEntireCube :: CubeX -> (CubeX, [MoveX])
+solveEntireCube cube =
+  let (c1, m1) = solveWhiteCrossPhase (cube, [])
+      (c2, m2) = solveWhiteCornersPhase (c1, m1)
+      (c3, m3) = solveMiddleLayerPhase (c2, m2)
+      (c4, m4) = solveLastLayerPhase (c3, m3)
+  in (c4, m4)
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikTypes.hs =====
+module RubikTypes where
+
+import Prelude
+
+-- | Dostępne kolory
+data ColorX
+  = CWhite
+  | CYellow
+  | CRed
+  | COrange
+  | CGreen
+  | CBlue
+  deriving (Eq, Show)
+
+-- | Nazwa ścianki
+data FaceSide
+  = FFront
+  | FRight
+  | FBack
+  | FLeft
+  | FUp
+  | FDown
+  deriving (Eq, Show)
+
+-- | Pojedyncza ścianka: (nazwa, 9 kolorów)
+type FaceX = (FaceSide, [ColorX])
+
+-- | Cała kostka: 6 ścian
+type CubeX = [FaceX]
+
+-- | Ruch w notacji
+data MoveX
+  = MU | MU'
+  | MD | MD'
+  | ML | ML'
+  | MR | MR'
+  | MF | MF'
+  | MB | MB'
+  deriving (Eq, Show)
+
+-- | Kostka + log ruchów
+type CubeWithLog2 = (CubeX, [MoveX])
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikUtils.hs =====
+module RubikUtils
+  ( emptyCubeX
+  , replaceFace
+  , rotateFaceCW
+  , rotateFaceCCW
+  , printCube
+  ) where
+
+import Prelude
+import RubikTypes
+
+-- | Tworzy "pustą" kostkę: 6 ścian w standardowej kolejności,
+--   każda wypełniona np. kolorem White - do nadpisania przez parser.
+emptyCubeX :: CubeX
+emptyCubeX =
+  [ (FFront, replicate 9 CWhite),
+    (FRight, replicate 9 CWhite),
+    (FBack, replicate 9 CWhite),
+    (FLeft, replicate 9 CWhite),
+    (FUp, replicate 9 CWhite),
+    (FDown, replicate 9 CWhite)
+  ]
+
+-- | Podmienia daną ściankę w strukturze 'CubeX' na nową (side, [ColorX]).
+replaceFace :: FaceSide -> FaceX -> CubeX -> CubeX
+replaceFace _    _    [] = []
+replaceFace side newFace (f@(s,_):rest)
+  | s == side  = newFace : rest
+  | otherwise  = f : replaceFace side newFace rest
+
+-- | Obrót 9-elementowej listy zgodnie z ruchem wskazówek zegara (3x3).
+--   Indeksy w 3x3 macierzy:
+--     0 1 2
+--     3 4 5
+--     6 7 8
+rotateFaceCW :: [ColorX] -> [ColorX]
+rotateFaceCW face =
+  [ face !! 6, face !! 3, face !! 0
+  , face !! 7, face !! 4, face !! 1
+  , face !! 8, face !! 5, face !! 2
+  ]
+
+-- | Obrót 3x3 w stronę przeciwną
+rotateFaceCCW :: [ColorX] -> [ColorX]
+rotateFaceCCW face =
+  [ face !! 2, face !! 5, face !! 8
+  , face !! 1, face !! 4, face !! 7
+  , face !! 0, face !! 3, face !! 6
+  ]
+
+-- | Proste wypisanie kostki na ekran
+printCube :: CubeX -> IO ()
+printCube [] = return ()
+printCube ((side, cols):xs) = do
+  putStrLn (show side ++ ": " ++ showColors cols)
+  printCube xs
+
+showColors :: [ColorX] -> String
+showColors [] = ""
+showColors (c:cs) = show c ++ " " ++ showColors cs
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage1_WhiteCross.hs =====
+module Stage1_WhiteCross
+  ( solveWhiteCrossPhase
+  ) where
+
+import Prelude
+import RubikTypes
+import RubikRotations (addMoveToLog)
+import RubikUtils
+
+-- | Główna funkcja fazy 1: biała kreska
+--   Zwraca (CubeX, [MoveX]) z ułożonym białym krzyżem na górnej ściance (FUp).
+solveWhiteCrossPhase :: CubeWithLog2 -> CubeWithLog2
+solveWhiteCrossPhase cwl =
+  let cwl' = fixWhiteEdges cwl
+  in if checkWhiteCross (fst cwl') then cwl' else solveWhiteCrossPhase cwl'
+
+-- | Sprawdza, czy białe krawędzie (indeksy [1,3,5,7]) na FUp są białe,
+--   i czy boczne kolory pasują do docelowych ścian.
+checkWhiteCross :: CubeX -> Bool
+checkWhiteCross _ = False  -- do zaimplementowania
+
+-- | Poprawia krawędzie białego krzyża
+fixWhiteEdges :: CubeWithLog2 -> CubeWithLog2
+fixWhiteEdges cwl =
+  -- tu np. zrzucamy złe krawędzie i wstawiamy je od dołu
+  cwl
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage2_WhiteCorners.hs =====
+module Stage2_WhiteCorners
+  ( solveWhiteCornersPhase
+  ) where
+
+import Prelude
+import RubikTypes
+import RubikRotations
+import RubikUtils
+
+solveWhiteCornersPhase :: CubeWithLog2 -> CubeWithLog2
+solveWhiteCornersPhase cwl =
+  let next = fixWhiteCorners cwl
+  in if checkWhiteCorners (fst next) then next
+                                     else solveWhiteCornersPhase next
+
+checkWhiteCorners :: CubeX -> Bool
+checkWhiteCorners _ = False  -- do wypełnienia
+
+fixWhiteCorners :: CubeWithLog2 -> CubeWithLog2
+fixWhiteCorners cwl = cwl  -- do wypełnienia
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage3_MiddleLayer.hs =====
+module Stage3_MiddleLayer
+  ( solveMiddleLayerPhase
+  ) where
+
+import Prelude
+import RubikTypes
+import RubikRotations
+import RubikUtils
+
+solveMiddleLayerPhase :: CubeWithLog2 -> CubeWithLog2
+solveMiddleLayerPhase cwl =
+  let attempt = fixMidlayer cwl
+  in if checkMidlayer (fst attempt) then attempt
+                                    else solveMiddleLayerPhase attempt
+
+checkMidlayer :: CubeX -> Bool
+checkMidlayer _ = False  -- do wypełnienia
+
+fixMidlayer :: CubeWithLog2 -> CubeWithLog2
+fixMidlayer cwl = cwl  -- do wypełnienia
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage4_LastLayer.hs =====
+module Stage4_LastLayer
+  ( solveLastLayerPhase
+  ) where
+
+import Prelude
+import RubikTypes
+import RubikRotations
+import RubikUtils
+
+solveLastLayerPhase :: CubeWithLog2 -> CubeWithLog2
+solveLastLayerPhase cwl =
+  let afterCross    = fixYellowCross cwl
+      afterCorners  = fixYellowCorners afterCross
+      afterEdges    = fixYellowEdges afterCorners
+  in afterEdges
+
+fixYellowCross :: CubeWithLog2 -> CubeWithLog2
+fixYellowCross cwl = cwl -- do wypełnienia
+
+fixYellowCorners :: CubeWithLog2 -> CubeWithLog2
+fixYellowCorners cwl = cwl
+
+fixYellowEdges :: CubeWithLog2 -> CubeWithLog2
+fixYellowEdges cwl = cwl
+
+

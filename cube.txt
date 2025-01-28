@@ -1,6 +1,6 @@
-Front Orange Orange Orange Orange Orange Orange Green Green Green
-Right Blue Blue Blue Blue Blue Blue Orange Orange Orange
-Back Red Red Red Red Red Red Blue Blue Blue
-Left Green Green Green Green Green Green Red Red Red
-Up Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow
-Down White White White White White White White White White
+Front Blue Red Red Red Red White Green Orange White
+Right Blue Yellow Green Green Blue Blue Red Orange Blue
+Back White Red Yellow Orange Orange Orange Orange Yellow Blue
+Left Green White White Yellow Green Green Yellow Green Yellow
+Up Orange Blue Orange Blue White Red Orange White White
+Down Red White Green Yellow Yellow Green Red Blue Yellow

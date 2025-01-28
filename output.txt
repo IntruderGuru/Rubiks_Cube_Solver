@@ -1,421 +1,2055 @@
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikMain.hs =====
-module RubikMain where
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\AppUtils.hs =====
+module AppUtils
+  ( readCube
+  , formatCube
+  , simplifyTaggedMoves
+  , groupByPhase
+  , printPhaseMoves
+  ) where
 
-import Prelude
-import System.IO (readFile, putStrLn)
-import System.Environment (getArgs)
-import RubikTypes
-import RubikParser
-import RubikSolver
-import RubikUtils
+import Types
+import Utils (getSide)  -- getSide do formatCube
+import Prelude hiding (Left, Right)
 
--- | Główna funkcja 'main' - wczytuje nazwę pliku z argumentów,
---   czyta zawartość, parsuje kostkę i uruchamia solver.
+--------------------------------------------------------------------------------
+-- Wczytywanie kostki
+--------------------------------------------------------------------------------
+
+readCube :: [String] -> Cube -> Cube
+readCube [] cube = cube
+readCube (line : xs) cube =
+  let ws         = words line
+      sideString = head ws
+      colorsStr  = tail ws
+      face       = (stringToSide sideString, map stringToColor colorsStr)
+  in readCube xs (face : cube)
+
+stringToSide :: String -> Side
+stringToSide "Down"  = Down
+stringToSide "Up"    = Up
+stringToSide "Left"  = Left
+stringToSide "Right" = Right
+stringToSide "Front" = Front
+stringToSide "Back"  = Back
+stringToSide _       = Up
+
+stringToColor :: String -> Color
+stringToColor "Blue"   = Blue
+stringToColor "Red"    = Red
+stringToColor "Yellow" = Yellow
+stringToColor "White"  = White
+stringToColor "Orange" = Orange
+stringToColor "Green"  = Green
+stringToColor _        = White
+
+--------------------------------------------------------------------------------
+-- Formatowanie kostki w stylu wejściowym
+--------------------------------------------------------------------------------
+
+-- | Zamienia 'Cube' na listę linijek w stylu "Side Color1 Color2 ... Color9".
+formatCube :: Cube -> [String]
+formatCube c =
+  map formatSide [Front, Right, Back, Left, Up, Down]
+  where
+    formatSide side =
+      let colors = getSide side c
+       in unwords (show side : map show colors)
+
+--------------------------------------------------------------------------------
+-- Upraszczanie ruchów 
+--------------------------------------------------------------------------------
+
+-- | Zwraca odwrotny ruch do danego: U -> U', U' -> U, ...
+inverseMove :: Move -> Move
+inverseMove U  = U'
+inverseMove U' = U
+inverseMove D  = D'
+inverseMove D' = D
+inverseMove L  = L'
+inverseMove L' = L
+inverseMove R  = R'
+inverseMove R' = R
+inverseMove F  = F'
+inverseMove F' = F
+inverseMove B  = B'
+inverseMove B' = B
+
+-- | Upraszczanie:
+--     - pary odwrotnych ruchów (R, R' → usuń)
+--     - potrójne te same ruchy (R, R, R → R')
+--     - poczwórne te same ruchy (R, R, R, R → usuń)
+simplifyTaggedMoves :: [(String, Move)] -> [(String, Move)]
+simplifyTaggedMoves moves =
+  -- na koniec odwracamy, bo stos budujemy "od lewej"
+  reverse (foldl step [] moves)
+  where
+    -- „step” odkłada nowy ruch (cur) na stos (acc),
+    -- a następnie próbuje go maksymalnie uprościć (reduceTop).
+    step :: [(String, Move)] -> (String, Move) -> [(String, Move)]
+    step acc cur = reduceTop (cur : acc)
+
+    reduceTop :: [(String, Move)] -> [(String, Move)]
+    reduceTop stack =
+      case stack of
+        --------------------------------------------------
+        -- 1) Para odwrotnych ruchów obok siebie => usuń
+        (x1@(phase1,mv1) : x2@(phase2,mv2) : xs)
+          | mv1 == inverseMove mv2
+            -> reduceTop xs  -- usuwamy oba z wierzchołka
+
+        --------------------------------------------------
+        -- 2) Trzy takie same ruchy z rzędu => zamień na 1 ruch odwrotny
+        (x1@(ph1,mv1) : x2@(ph2,mv2) : x3@(ph3,mv3) : xs)
+          | mv1 == mv2 && mv2 == mv3
+            -> -- np. R, R, R => R'
+               -- Dla nazwy fazy możesz wybrać np. ph3 (ostatni) lub ph1 (pierwszy)
+               reduceTop ((ph3, inverseMove mv1) : xs)
+
+        --------------------------------------------------
+        -- 3) Cztery takie same ruchy => usuwamy je całkowicie
+        (x1@(ph1,mv1) : x2@(ph2,mv2) : x3@(ph3,mv3) : x4@(ph4,mv4) : xs)
+          | mv1 == mv2 && mv2 == mv3 && mv3 == mv4
+            -> -- np. R, R, R, R => brak ruchu
+               reduceTop xs
+
+        --------------------------------------------------
+        _ -> stack
+
+
+--------------------------------------------------------------------------------
+-- Grupowanie ruchów według faz
+--------------------------------------------------------------------------------
+
+groupByPhase :: [(String, Move)] -> [(String, [Move])]
+groupByPhase =
+  foldr insertPh [] 
+  where
+    insertPh (ph, mv) [] = [(ph, [mv])]
+    insertPh (ph, mv) ((curPh, mvs):rest)
+      | ph == curPh = (curPh, mv:mvs) : rest
+      | otherwise   = (ph, [mv]) : (curPh, mvs) : rest
+
+--------------------------------------------------------------------------------
+-- Drukowanie faz
+--------------------------------------------------------------------------------
+
+printPhaseMoves :: (String, [Move]) -> IO ()
+printPhaseMoves (phaseName, moves) = do
+  putStr (phaseName ++ ": [")
+  putStr (unwords (map show moves))
+  putStrLn "]"
+
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\Main.hs =====
+import AppUtils
+import Scramble (generateScramble) -- Importujemy nowy moduł
+import Solving (solveCubePhases)
+import System.Environment
+import System.IO (writeFile) -- Dodany import do zapisu plików
+import Types
+import Utils
+import Prelude hiding (Left, Right)
+
 main :: IO ()
 main = do
   args <- getArgs
-  case args of
-    (fileName:_) -> do
-      content <- readFile fileName
-      let cubeParsed = parseRubikFile content
-      let (finalCube, moves) = solveEntireCube cubeParsed
-      putStrLn "=== WYNIK ==="
-      printCube finalCube
-      putStrLn "\n=== LISTA RUCHÓW ==="
-      print moves
-    _ -> putStrLn "Użycie: ./RubikMain2 <plik_z_kostka>"
+  if "--help" `elem` args
+    then do
+      putStrLn "Instrukcja użycia:"
+      putStrLn "  rubikSolver <plik_z_kostka.txt>"
+      putStrLn "  rubikSolver --scramble <liczba_ruchów> [<plik_wyjściowy>]"
+      putStrLn "  W pliku powinny znajdować się wiersze z: <Side> <9 kolorów> ..."
+      putStrLn "  1. Ustaw kostkę fizycznie tak, aby górna (Up) była biała, a frontowa (Front) czerwona."
+      putStrLn "  2. W pliku tekstowym wpisz kolejno ściany i 9 kolorów każdej z nich, np.:"
+      putStrLn "   Front Blue Red Red Red Red White Green Orange White"
+      putStrLn "   Right Blue Yellow Green Green Blue Blue Red Orange Blue"
+      putStrLn "   ... i tak dalej dla Back, Left, Up, Down."
+      putStrLn "Dostępne strony: Front, Right, Back, Left, Up, Down"
+      putStrLn "Dostępne kolory: White, Yellow, Orange, Green, Red, Blue"
+    else case args of
+      ("--scramble" : numMovesStr : rest) -> do
+        let numMoves = read numMovesStr :: Int
+        let solvedCube = getSolvedCube
+        let (moves, scrambledCube) = generateScramble numMoves solvedCube
+        -- Sprawdzenie, czy użytkownik podał nazwę pliku do zapisu
+        case rest of
+          (outputFile : _) -> do
+            -- Zapisuje kostkę do pliku
+            let cubeStr = unlines (formatCube scrambledCube)
+            writeFile outputFile cubeStr
+            putStrLn $ "Scramble zapisany do pliku: " ++ outputFile
+            putStrLn "=== Losowe Ułożenie Kostki ==="
+            mapM_ putStrLn (formatCube scrambledCube)
+          [] -> do
+            -- Jeśli plik nie został podany, wyświetl kostkę i ruchy na ekranie
+            putStrLn "=== Losowe Ułożenie Kostki ==="
+            mapM_ putStrLn (formatCube scrambledCube)
+            putStrLn "\n=== Ruchy Scrambla ==="
+            putStrLn $ unwords (map show moves)
+      (fileName : _) -> do
+        content <- readFile fileName
+        let fileLines = lines content
+        let initialCube = readCube fileLines []
+
+        putStrLn "=== Cube to be solved with CFOP method ==="
+        mapM_ putStrLn (formatCube initialCube)
+
+        let (finalCube, taggedMoves) = solveCubePhases initialCube
+        let simplifiedTagged = simplifyTaggedMoves taggedMoves
+        let groupedByPhase = groupByPhase simplifiedTagged
+
+        putStrLn "\n=== Moves ==="
+        mapM_ printPhaseMoves groupedByPhase
+      [] -> putStrLn "Error: Please provide a file name or '--scramble <number_of_moves> [<output_file>]' as an argument."
 
 
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikParser.hs =====
-module RubikParser
-  ( parseRubikFile
-  ) where
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\Rotations.hs =====
+module Rotations where
 
-import Prelude
-import RubikTypes (CubeX, FaceX, FaceSide(..), ColorX(..))
-import RubikUtils (replaceFace, emptyCubeX)
+import Types
+import Utils
+import Prelude hiding (Left, Right)
 
-{-
-  Moduł odpowiedzialny za wczytanie i sparsowanie pliku.
-  Zakładamy, że plik zawiera 6 linii w postaci:
-     Front White White White White White White White White White
-     Right ...
-     Back ...
-     Left ...
-     Up ...
-     Down ...
-  Gdzie w jednej linii jest nazwa ścianki + 9 kolorów w postaci stringów
+--------------------------------------------------------------------------------
+-- Zmodyfikowane nazwy i struktura kodu, aby kod był bardziej czytelny i spójny
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- Funkcje główne — zarządzanie ruchami, historia ruchów i składanie ruchów
+--------------------------------------------------------------------------------
+
+{-|
+  Dla kostki i historii ruchów (`CubeWithMoves` = `(Cube, [Move])`) 
+  aplikuje listę ruchów `movesToApply`, najpierw tłumacząc je tak, 
+  by ścianka z kolorem białym znalazła się „u góry” (ang. White Up).
+
+  W wyniku zwraca nową krotkę:
+  1. Nowy stan kostki po wykonaniu wszystkich ruchów
+  2. Zaktualizowaną historię ruchów
 -}
+applyMovesWhiteUp :: Side -> [Move] -> CubeWithMoves -> CubeWithMoves
+applyMovesWhiteUp side movesToApply (c, history) =
+  (makeMoves translatedMoves c, history ++ translatedMoves)
+  where
+    translatedMoves = translateMovesWhiteUp side movesToApply
 
-parseRubikFile :: String -> CubeX
-parseRubikFile contents =
-  let ls = lines contents
-      c0 = emptyCubeX
-  in fillCube c0 ls
-
--- | Wypełnia pustą kostkę danymi z linii.
-fillCube :: CubeX -> [String] -> CubeX
-fillCube cube [] = cube
-fillCube cube (l:ls) =
-  let faceParsed = parseLine l
-      newCube    = insertFace cube faceParsed
-  in fillCube newCube ls
-
-parseLine :: String -> FaceX
-parseLine line =
-  let ws = words line
-  in case ws of
-       (sideName : rest) ->
-         let side   = parseFaceSide sideName
-             colors = map parseColorX rest
-         in (side, colors)
-       _ -> error "Linia niepoprawna"
-
-parseFaceSide :: String -> FaceSide
-parseFaceSide nm =
-  case nm of
-    "Front" -> FFront
-    "Back"  -> FBack
-    "Left"  -> FLeft
-    "Right" -> FRight
-    "Up"    -> FUp
-    "Down"  -> FDown
-    _       -> error "Nieznana nazwa ścianki"
-
-parseColorX :: String -> ColorX
-parseColorX str =
-  case str of
-    "White"  -> CWhite
-    "Yellow" -> CYellow
-    "Red"    -> CRed
-    "Orange" -> COrange
-    "Green"  -> CGreen
-    "Blue"   -> CBlue
-    _        -> error ("Nieznany kolor: " ++ str)
-
--- | Wstawia gotową ściankę (side, [ColorX]) do kostki.
-insertFace :: CubeX -> FaceX -> CubeX
-insertFace cube face@(side, _) =
-  replaceFace side face cube
-
-
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikRotations.hs =====
-module RubikRotations
-  ( makeMove
-  , makeMoves
-  , addMoveToLog
-  ) where
-
-import Prelude
-import RubikTypes
-
-{-
-  W tym module definiujemy, jak wygląda transformacja kostki
-  przy wykonaniu konkretnego ruchu MU, MU', MD, MD' itd.
-
-  Każda z funkcji 'applyU', 'applyU'' itp.:
-    - zmienia zawartość ścianki górnej (FUp) zgodnie z obrotem 90° w lewo/prawo,
-    - przenosi kolory między front, right, back, left w "górnym wierszu".
-
-  Podobnie D, L, R, F, B – tyle że w innych miejscach.
-
-  Na końcu 'makeMove' jest dispatch: sprawdza, jaki ruch wykonać, i stosuje daną funkcję.
+{-|
+  Analogiczne do 'applyMovesWhiteUp', z tą różnicą, że ruchy tłumaczone są 
+  tak, by ścianka z kolorem białym wylądowała na dole (ang. White Down).
 -}
+applyMovesWhiteDown :: Side -> [Move] -> CubeWithMoves -> CubeWithMoves
+applyMovesWhiteDown side movesToApply (c, history) =
+  (makeMoves translatedMoves c, history ++ translatedMoves)
+  where
+    translatedMoves = translateMovesWhiteDown side movesToApply
 
-makeMove :: MoveX -> CubeX -> CubeX
-makeMove mv cube =
-  case mv of
-    MU  -> applyU cube
-    MU' -> applyU' cube
-    MD  -> applyD cube
-    MD' -> applyD' cube
-    ML  -> applyL cube
-    ML' -> applyL' cube
-    MR  -> applyR cube
-    MR' -> applyR' cube
-    MF  -> applyF cube
-    MF' -> applyF' cube
-    MB  -> applyB cube
-    MB' -> applyB' cube
+{-|
+  Wykonuje sekwencję ruchów na kostce 'Cube'. Wykorzystuje foldl,
+  który przechodzi przez listę ruchów i nakłada je kolejno na kostkę.
+-}
+makeMoves :: [Move] -> Cube -> Cube
+makeMoves movesToApply c = foldl (flip moveCube) c movesToApply
 
--- | Wykonuje całą listę ruchów na kostce, sekwencyjnie.
-makeMoves :: [MoveX] -> CubeX -> CubeX
-makeMoves moves cube = foldl (\acc mv -> makeMove mv acc) cube moves
+--------------------------------------------------------------------------------
+-- Funkcja 'moveCube' rozdziela rodzaje ruchów na konkretne transformatory stanu
+--------------------------------------------------------------------------------
 
--- | Dopisuje ruch do historii i aktualizuje kostkę.
-addMoveToLog :: MoveX -> CubeWithLog2 -> CubeWithLog2
-addMoveToLog mv (cb, past) = (makeMove mv cb, past ++ [mv])
+{-|
+  Wykonuje pojedynczy ruch 'Move' na kostce. 
+  Każdy konstruktor typu 'Move' ma przypisaną odpowiednią funkcję 
+  obracającą właściwe ściany/wiersze/kolumny.
+-}
+moveCube :: Move -> Cube -> Cube
+moveCube U  c = moveUp c
+moveCube U' c = moveUp' c
+moveCube D  c = moveDown c
+moveCube D' c = moveDown' c
+moveCube L  c = moveLeft c
+moveCube L' c = moveLeft' c
+moveCube R  c = moveRight c
+moveCube R' c = moveRight' c
+moveCube B  c = moveBack c
+moveCube B' c = moveBack' c
+moveCube F  c = moveFront c
+moveCube F' c = moveFront' c
 
---------------------------------------
--- Szkielet do wypełnienia:
---------------------------------------
-applyU :: CubeX -> CubeX
-applyU c = c  -- TODO: implementacja
+--------------------------------------------------------------------------------
+-- Górna ścianka (Up)
+--------------------------------------------------------------------------------
 
-applyU' :: CubeX -> CubeX
-applyU' c = c -- TODO
+-- | Obrót górnej ścianki zgodnie z ruchem zegara
+moveUp :: Cube -> Cube
+moveUp c = rotateTopSideClockwise $ rotateTopRowClockwise c
 
-applyD :: CubeX -> CubeX
-applyD c = c  -- TODO
+-- | Obrót górnej ścianki przeciwnie do ruchu zegara
+moveUp' :: Cube -> Cube
+moveUp' c = rotateTopRowCounterClockwise $ rotateTopSideCounterClockwise c
 
-applyD' :: CubeX -> CubeX
-applyD' c = c -- TODO
+--------------------------------------------------------------------------------
+-- Dolna ścianka (Down)
+--------------------------------------------------------------------------------
 
-applyL :: CubeX -> CubeX
-applyL c = c -- TODO
+-- | Obrót dolnej ścianki zgodnie z ruchem zegara
+moveDown :: Cube -> Cube
+moveDown c = rotateDownRowCounterClockwise $ rotateDownSideClockwise c
 
-applyL' :: CubeX -> CubeX
-applyL' c = c -- TODO
+-- | Obrót dolnej ścianki przeciwnie do ruchu zegara
+moveDown' :: Cube -> Cube
+moveDown' c = rotateDownRowClockwise $ rotateDownSideCounterClockwise c
 
-applyR :: CubeX -> CubeX
-applyR c = c -- TODO
+--------------------------------------------------------------------------------
+-- Lewa ścianka (Left)
+--------------------------------------------------------------------------------
 
-applyR' :: CubeX -> CubeX
-applyR' c = c -- TODO
+-- | Obrót lewej ścianki do przodu (z perspektywy gracza patrzącego na Front)
+moveLeft :: Cube -> Cube
+moveLeft c = rotateLeftSideToFront $ rotateLeftColumnToFront c
 
-applyF :: CubeX -> CubeX
-applyF c = c -- TODO
+-- | Obrót lewej ścianki do tyłu
+moveLeft' :: Cube -> Cube
+moveLeft' c = rotateLeftSideToBack $ rotateLeftColumnToBack c
 
-applyF' :: CubeX -> CubeX
-applyF' c = c -- TODO
+--------------------------------------------------------------------------------
+-- Prawa ścianka (Right)
+--------------------------------------------------------------------------------
 
-applyB :: CubeX -> CubeX
-applyB c = c -- TODO
+-- | Obrót prawej ścianki do tyłu (z perspektywy gracza)
+moveRight :: Cube -> Cube
+moveRight c = rotateRightSideToBack $ rotateRightColumnToBack c
 
-applyB' :: CubeX -> CubeX
-applyB' c = c -- TODO
+-- | Obrót prawej ścianki do przodu
+moveRight' :: Cube -> Cube
+moveRight' c = rotateRightSideToFront $ rotateRightColumnToFront c
+
+--------------------------------------------------------------------------------
+-- Przednia ścianka (Front)
+--------------------------------------------------------------------------------
+
+-- | Obrót przedniej ścianki zgodnie z ruchem zegara
+moveFront :: Cube -> Cube
+moveFront c = rotateFrontSideClockwise $ rotateFrontRowsClockwise c
+
+-- | Obrót przedniej ścianki przeciwnie do ruchu zegara
+moveFront' :: Cube -> Cube
+moveFront' c = rotateFrontSideCounterClockwise $ rotateFrontRowsCounterClockwise c
+
+--------------------------------------------------------------------------------
+-- Tylna ścianka (Back)
+--------------------------------------------------------------------------------
+
+-- | Obrót tylnej ścianki zgodnie z ruchem zegara
+moveBack :: Cube -> Cube
+moveBack c = rotateBackSideClockwise $ rotateBackRowsClockwise c
+
+-- | Obrót tylnej ścianki przeciwnie do ruchu zegara
+moveBack' :: Cube -> Cube
+moveBack' c = rotateBackSideCounterClockwise $ rotateBackRowsCounterClockwise c
+
+--------------------------------------------------------------------------------
+-- Obrót całej ścianki (9-elementowa lista kolorów) w obie strony
+--------------------------------------------------------------------------------
+
+{-|
+  Obraca listę 9 kolorów (reprezentującą ściankę kostki) zgodnie z ruchem zegara.
+  Zastosowano pattern matching, aby unikać wielokrotnych wywołań '!!'.
+-}
+rotateSideClockwise :: [Color] -> [Color]
+rotateSideClockwise [c0, c1, c2, c3, c4, c5, c6, c7, c8] =
+  [ c6, c3, c0
+  , c7, c4, c1
+  , c8, c5, c2
+  ]
+-- Jeśli z jakiegoś powodu lista nie ma 9 elementów, zwracamy ją bez zmian
+rotateSideClockwise side = side
+
+{-|
+  Obraca listę 9 kolorów (reprezentującą ściankę kostki) przeciwnie do ruchu zegara.
+-}
+rotateSideCounterClockwise :: [Color] -> [Color]
+rotateSideCounterClockwise [c0, c1, c2, c3, c4, c5, c6, c7, c8] =
+  [ c2, c5, c8
+  , c1, c4, c7
+  , c0, c3, c6
+  ]
+rotateSideCounterClockwise side = side
+
+--------------------------------------------------------------------------------
+-- TOP (górne wiersze i ścianka)
+--------------------------------------------------------------------------------
+
+rotateTopSideClockwise :: Cube -> Cube
+rotateTopSideClockwise c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back, back)
+  , (Left, left)
+  , (Up, rotateSideClockwise up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateTopSideCounterClockwise :: Cube -> Cube
+rotateTopSideCounterClockwise c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back, back)
+  , (Left, left)
+  , (Up, rotateSideCounterClockwise up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateTopRowClockwise :: Cube -> Cube
+rotateTopRowClockwise c =
+  [ (Front, replace3 (right !! 0, right !! 1, right !! 2) (0, 1, 2) front)
+  , (Right, replace3 (back  !! 0, back  !! 1, back  !! 2) (0, 1, 2) right)
+  , (Back,  replace3 (left  !! 0, left  !! 1, left  !! 2) (0, 1, 2) back)
+  , (Left,  replace3 (front !! 0, front !! 1, front !! 2) (0, 1, 2) left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateTopRowCounterClockwise :: Cube -> Cube
+rotateTopRowCounterClockwise c =
+  [ (Front, replace3 (left  !! 0, left  !! 1, left  !! 2) (0, 1, 2) front)
+  , (Right, replace3 (front !! 0, front !! 1, front !! 2) (0, 1, 2) right)
+  , (Back,  replace3 (right !! 0, right !! 1, right !! 2) (0, 1, 2) back)
+  , (Left,  replace3 (back  !! 0, back  !! 1, back  !! 2) (0, 1, 2) left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+--------------------------------------------------------------------------------
+-- DOWN (dolne wiersze i ścianka)
+--------------------------------------------------------------------------------
+
+rotateDownSideClockwise :: Cube -> Cube
+rotateDownSideClockwise c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back, back)
+  , (Left, left)
+  , (Up, up)
+  , (Down, rotateSideClockwise down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateDownSideCounterClockwise :: Cube -> Cube
+rotateDownSideCounterClockwise c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back, back)
+  , (Left, left)
+  , (Up, up)
+  , (Down, rotateSideCounterClockwise down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateDownRowClockwise :: Cube -> Cube
+rotateDownRowClockwise c =
+  [ (Front, replace3 (right !! 6, right !! 7, right !! 8) (6, 7, 8) front)
+  , (Right, replace3 (back  !! 6, back  !! 7, back  !! 8) (6, 7, 8) right)
+  , (Back,  replace3 (left  !! 6, left  !! 7, left  !! 8) (6, 7, 8) back)
+  , (Left,  replace3 (front !! 6, front !! 7, front !! 8) (6, 7, 8) left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateDownRowCounterClockwise :: Cube -> Cube
+rotateDownRowCounterClockwise c =
+  [ (Front, replace3 (left  !! 6, left  !! 7, left  !! 8) (6, 7, 8) front)
+  , (Right, replace3 (front !! 6, front !! 7, front !! 8) (6, 7, 8) right)
+  , (Back,  replace3 (right !! 6, right !! 7, right !! 8) (6, 7, 8) back)
+  , (Left,  replace3 (back  !! 6, back  !! 7, back  !! 8) (6, 7, 8) left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+--------------------------------------------------------------------------------
+-- LEFT (lewe kolumny i ścianka)
+--------------------------------------------------------------------------------
+
+rotateLeftColumnToFront :: Cube -> Cube
+rotateLeftColumnToFront c =
+  [ (Front, replace3 (up !! 0, up !! 3, up !! 6) (0, 3, 6) front)
+  , (Right, right)
+  , (Back,  replace3 (down !! 6, down !! 3, down !! 0) (2, 5, 8) back)
+  , (Left,  left)
+  , (Up,    replace3 (back !! 8, back !! 5, back !! 2) (0, 3, 6) up)
+  , (Down,  replace3 (front !! 0, front !! 3, front !! 6) (0, 3, 6) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateLeftColumnToBack :: Cube -> Cube
+rotateLeftColumnToBack c =
+  [ (Front, replace3 (down !! 0, down !! 3, down !! 6) (0, 3, 6) front)
+  , (Right, right)
+  , (Back,  replace3 (up   !! 6, up   !! 3, up   !! 0) (2, 5, 8) back)
+  , (Left,  left)
+  , (Up,    replace3 (front !! 0, front !! 3, front !! 6) (0, 3, 6) up)
+  , (Down,  replace3 (back  !! 8, back  !! 5, back  !! 2) (0, 3, 6) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateLeftSideToFront :: Cube -> Cube
+rotateLeftSideToFront c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back,  back)
+  , (Left,  rotateSideClockwise left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateLeftSideToBack :: Cube -> Cube
+rotateLeftSideToBack c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back,  back)
+  , (Left,  rotateSideCounterClockwise left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+--------------------------------------------------------------------------------
+-- RIGHT (prawe kolumny i ścianka)
+--------------------------------------------------------------------------------
+
+rotateRightColumnToFront :: Cube -> Cube
+rotateRightColumnToFront c =
+  [ (Front, replace3 (up !! 2, up !! 5, up !! 8) (2, 5, 8) front)
+  , (Right, right)
+  , (Back,  replace3 (down !! 8, down !! 5, down !! 2) (0, 3, 6) back)
+  , (Left,  left)
+  , (Up,    replace3 (back !! 6, back !! 3, back !! 0) (2, 5, 8) up)
+  , (Down,  replace3 (front !! 2, front !! 5, front !! 8) (2, 5, 8) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateRightColumnToBack :: Cube -> Cube
+rotateRightColumnToBack c =
+  [ (Front, replace3 (down !! 2, down !! 5, down !! 8) (2, 5, 8) front)
+  , (Right, right)
+  , (Back,  replace3 (up   !! 8, up   !! 5, up   !! 2) (0, 3, 6) back)
+  , (Left,  left)
+  , (Up,    replace3 (front !! 2, front !! 5, front !! 8) (2, 5, 8) up)
+  , (Down,  replace3 (back  !! 6, back  !! 3, back  !! 0) (2, 5, 8) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateRightSideToFront :: Cube -> Cube
+rotateRightSideToFront c =
+  [ (Front, front)
+  , (Right, rotateSideCounterClockwise right)
+  , (Back,  back)
+  , (Left,  left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateRightSideToBack :: Cube -> Cube
+rotateRightSideToBack c =
+  [ (Front, front)
+  , (Right, rotateSideClockwise right)
+  , (Back,  back)
+  , (Left,  left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+--------------------------------------------------------------------------------
+-- FRONT (przednie wiersze i ścianka)
+--------------------------------------------------------------------------------
+
+rotateFrontRowsClockwise :: Cube -> Cube
+rotateFrontRowsClockwise c =
+  [ (Front, front)
+  , (Right, replace3 (up !! 6,  up !! 7,  up !! 8)  (0, 3, 6) right)
+  , (Back,  back)
+  , (Left,  replace3 (down !! 0, down !! 1, down !! 2) (2, 5, 8) left)
+  , (Up,    replace3 (left !! 2, left !! 5, left !! 8) (8, 7, 6) up)
+  , (Down,  replace3 (right !! 6, right !! 3, right !! 0) (0, 1, 2) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateFrontRowsCounterClockwise :: Cube -> Cube
+rotateFrontRowsCounterClockwise c =
+  [ (Front, front)
+  , (Right, replace3 (down !! 2, down !! 1, down !! 0) (0, 3, 6) right)
+  , (Back,  back)
+  , (Left,  replace3 (up   !! 8, up   !! 7, up   !! 6) (2, 5, 8) left)
+  , (Up,    replace3 (right !! 0, right !! 3, right !! 6) (6, 7, 8) up)
+  , (Down,  replace3 (left  !! 2, left  !! 5, left  !! 8) (0, 1, 2) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateFrontSideClockwise :: Cube -> Cube
+rotateFrontSideClockwise c =
+  [ (Front, rotateSideClockwise front)
+  , (Right, right)
+  , (Back,  back)
+  , (Left,  left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateFrontSideCounterClockwise :: Cube -> Cube
+rotateFrontSideCounterClockwise c =
+  [ (Front, rotateSideCounterClockwise front)
+  , (Right, right)
+  , (Back,  back)
+  , (Left,  left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+--------------------------------------------------------------------------------
+-- BACK (tylne wiersze i ścianka)
+--------------------------------------------------------------------------------
+
+rotateBackRowsClockwise :: Cube -> Cube
+rotateBackRowsClockwise c =
+  [ (Front, front)
+  , (Right, replace3 (down !! 8, down !! 7, down !! 6) (2, 5, 8) right)
+  , (Back,  back)
+  , (Left,  replace3 (up   !! 2, up   !! 1, up   !! 0) (0, 3, 6) left)
+  , (Up,    replace3 (right !! 2, right !! 5, right !! 8) (0, 1, 2) up)
+  , (Down,  replace3 (left  !! 0, left  !! 3, left  !! 6) (6, 7, 8) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateBackRowsCounterClockwise :: Cube -> Cube
+rotateBackRowsCounterClockwise c =
+  [ (Front, front)
+  , (Right, replace3 (up   !! 0, up   !! 1, up   !! 2) (2, 5, 8) right)
+  , (Back,  back)
+  , (Left,  replace3 (down !! 6, down !! 7, down !! 8) (0, 3, 6) left)
+  , (Up,    replace3 (left  !! 6, left  !! 3, left  !! 0) (0, 1, 2) up)
+  , (Down,  replace3 (right !! 8, right !! 5, right !! 2) (6, 7, 8) down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateBackSideClockwise :: Cube -> Cube
+rotateBackSideClockwise c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back,  rotateSideClockwise back)
+  , (Left,  left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
+
+rotateBackSideCounterClockwise :: Cube -> Cube
+rotateBackSideCounterClockwise c =
+  [ (Front, front)
+  , (Right, right)
+  , (Back,  rotateSideCounterClockwise back)
+  , (Left,  left)
+  , (Up, up)
+  , (Down, down)
+  ]
+  where
+    (front, left, back, right, up, down) = getSides c
 
 
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikSolver.hs =====
-module RubikSolver
-  ( solveEntireCube
-  ) where
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\Scramble.hs =====
+module Scramble
+  ( generateScramble,
+  )
+where
 
-import Prelude
-import RubikTypes
-import Stage1_WhiteCross
-import Stage2_WhiteCorners
-import Stage3_MiddleLayer
-import Stage4_LastLayer
+import Rotations
+import Types
+import Utils
 
--- | Główny solver - wywołuje 4 fazy po kolei.
---   Zwraca finalną kostkę i listę wykonanych ruchów.
-solveEntireCube :: CubeX -> (CubeX, [MoveX])
-solveEntireCube cube =
-  let (c1, m1) = solveWhiteCrossPhase (cube, [])
-      (c2, m2) = solveWhiteCornersPhase (c1, m1)
-      (c3, m3) = solveMiddleLayerPhase (c2, m2)
-      (c4, m4) = solveLastLayerPhase (c3, m3)
-  in (c4, m4)
+-- | Lista wszystkich możliwych ruchów.
+allMoves :: [Move]
+allMoves = [U, U', D, D', L, L', R, R', F, F', B, B']
 
+-- | Implementacja prostego generatora liczb pseudolosowych (Linear Congruential Generator).
+lcg :: Int -> [Int]
+lcg seed =
+  let a = 1664525
+      c = 1013904223
+      m = 2 ^ 32
+   in iterate (\x -> (a * x + c) `mod` m) seed
 
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikTypes.hs =====
-module RubikTypes where
+-- | Konwertuje liczbę całkowitą na indeks w zakresie dostępnych ruchów.
+toMoveIndex :: Int -> Int
+toMoveIndex num = num `mod` length allMoves
 
-import Prelude
+-- | Generuje listę pseudolosowych ruchów o zadanej długości.
+generateRandomMoves :: Int -> [Move]
+generateRandomMoves n = map ((allMoves !!) . toMoveIndex) (take n $ lcg seed)
+  where
+    -- Możemy użyć stałego ziarna lub innej metody deterministycznej.
+    -- Na przykład, użyj sumy kodów znaków z nazwiska autora:
+    seed = sum $ map fromEnum "defaultSeed"
 
--- | Dostępne kolory
-data ColorX
-  = CWhite
-  | CYellow
-  | CRed
-  | COrange
-  | CGreen
-  | CBlue
-  deriving (Eq, Show)
-
--- | Nazwa ścianki
-data FaceSide
-  = FFront
-  | FRight
-  | FBack
-  | FLeft
-  | FUp
-  | FDown
-  deriving (Eq, Show)
-
--- | Pojedyncza ścianka: (nazwa, 9 kolorów)
-type FaceX = (FaceSide, [ColorX])
-
--- | Cała kostka: 6 ścian
-type CubeX = [FaceX]
-
--- | Ruch w notacji
-data MoveX
-  = MU | MU'
-  | MD | MD'
-  | ML | ML'
-  | MR | MR'
-  | MF | MF'
-  | MB | MB'
-  deriving (Eq, Show)
-
--- | Kostka + log ruchów
-type CubeWithLog2 = (CubeX, [MoveX])
+-- | Generuje losowe ułożenie kostki poprzez zastosowanie losowych ruchów.
+-- Zwraca zarówno listę ruchów, jak i wynikową kostkę.
+generateScramble :: Int -> Cube -> ([Move], Cube)
+generateScramble numMoves solvedCube =
+  let moves = generateRandomMoves numMoves
+      scrambled = foldl (flip moveCube) solvedCube moves
+   in (moves, scrambled)
 
 
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\RubikUtils.hs =====
-module RubikUtils
-  ( emptyCubeX
-  , replaceFace
-  , rotateFaceCW
-  , rotateFaceCCW
-  , printCube
-  ) where
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\SolveF2L.hs =====
+module SolveF2L
+  ( solveF2L,
+  )
+where
 
-import Prelude
-import RubikTypes
+import Rotations
+import Types
+import Utils
+import Prelude hiding (Left, Right)
 
--- | Tworzy "pustą" kostkę: 6 ścian w standardowej kolejności,
---   każda wypełniona np. kolorem White - do nadpisania przez parser.
-emptyCubeX :: CubeX
-emptyCubeX =
-  [ (FFront, replicate 9 CWhite),
-    (FRight, replicate 9 CWhite),
-    (FBack, replicate 9 CWhite),
-    (FLeft, replicate 9 CWhite),
-    (FUp, replicate 9 CWhite),
-    (FDown, replicate 9 CWhite)
+-------------------------------------------------------------------------------
+-- Faza 2: F2L (First Two Layers) - Białe rogi + Środkowa warstwa
+-------------------------------------------------------------------------------
+
+-- | Główna funkcja scalająca etap F2L:
+--   1. Ułożenie białych rogów
+--   2. Ułożenie środkowej warstwy
+solveF2L :: CubeWithMoves -> CubeWithMoves
+solveF2L cw =
+  let cwCorners = solveWhiteCorners cw
+   in solveMidLayerEdges cwCorners
+
+-------------------------------------------------------------------------------
+-- 1) Białe rogi (White Corners)
+-------------------------------------------------------------------------------
+
+-- |
+--  Główna funkcja do układania białych rogów na górnej ściance.
+--  * Jeśli rogi są już poprawnie ułożone (sprawdza 'areWhiteCornersAligned'),
+--    zwraca stan bez zmian.
+--  * W przeciwnym razie rekurencyjnie wywołuje 'adjustWhiteCorners'.
+solveWhiteCorners :: CubeWithMoves -> CubeWithMoves
+solveWhiteCorners cw
+  | areWhiteCornersAligned cw = cw
+  | otherwise = solveWhiteCorners (adjustWhiteCorners cw)
+
+-- |
+--  Sprawdza, czy wszystkie białe rogi są już ułożone:
+--  1. Czy cztery rogi górnej ścianki (Up) - indeksy 0,2,6,8 - są białe.
+--  2. Czy odpowiadające im rogi na ścianach (Front, Right, Left, Back)
+--     mają właściwy kolor na pozycjach 0 i 2.
+areWhiteCornersAligned :: CubeWithMoves -> Bool
+areWhiteCornersAligned cw =
+  checkWhiteUp cw
+    && cornerHasProperColors Front front
+    && cornerHasProperColors Right right
+    && cornerHasProperColors Left left
+    && cornerHasProperColors Back back
+  where
+    (cube, _) = cw
+    (front, left, back, right, up, down) = getSides cube
+
+    cornerHasProperColors :: Side -> [Color] -> Bool
+    cornerHasProperColors side colors =
+      colors !! 0 == getTargetSideColor side
+        && colors !! 2 == getTargetSideColor side
+
+-- | Sprawdza, czy cztery rogi Up (0,2,6,8) są białe.
+checkWhiteUp :: CubeWithMoves -> Bool
+checkWhiteUp (c, _) =
+  up !! 0 == White
+    && up !! 2 == White
+    && up !! 6 == White
+    && up !! 8 == White
+  where
+    up = getSide Up c
+
+-- |
+--  Główna funkcja naprawcza (rekurencyjna) dla białych rogów:
+--  1) Zrzuca niepoprawnie ułożone białe rogi z góry na dół ('dropWrongWhiteCorners'),
+--  2) Następnie poprawia każdy róg (Front, Right, Left, Back).
+adjustWhiteCorners :: CubeWithMoves -> CubeWithMoves
+adjustWhiteCorners =
+  fixCornerBackUp
+    . fixCornerLeftUp
+    . fixCornerRightUp
+    . fixCornerFrontUp
+    . dropWrongWhiteCorners
+
+-------------------------------------------------------------------------------
+-- a) Zrzucanie błędnych rogów na dół
+-------------------------------------------------------------------------------
+
+-- |
+--  Jeśli w rogu górnej ścianki pojawia się biel, ale są tam nieprawidłowe kolory
+--  (np. powinna być para Red/Green, a mamy inne kolory),
+--  wykonujemy sekwencję ruchów (z translacją white-up), by zrzucić ten róg na dół.
+--
+--  Funkcja wywołuje się rekurencyjnie, aż wszystkie błędne rogi zostaną zrzucone.
+dropWrongWhiteCorners :: CubeWithMoves -> CubeWithMoves
+dropWrongWhiteCorners cw
+  | up !! 6 == White && (front !! 0 /= Red || left !! 2 /= Green) =
+      go $ applyMovesWhiteUp Front [L, D, L'] cw
+  | up !! 8 == White && (front !! 2 /= Red || right !! 0 /= Blue) =
+      go $ applyMovesWhiteUp Right [L, D, L'] cw
+  | up !! 0 == White && (back !! 0 /= Orange || left !! 0 /= Green) =
+      go $ applyMovesWhiteUp Left [L, D, L'] cw
+  | up !! 2 == White && (right !! 2 /= Blue || back !! 0 /= Orange) =
+      go $ applyMovesWhiteUp Back [L, D, L'] cw
+  | otherwise = cw
+  where
+    (cube, _) = cw
+    (front, left, back, right, up, down) = getSides cube
+    go = dropWrongWhiteCorners -- rekurencja
+
+-------------------------------------------------------------------------------
+-- b) Poprawianie rogów na ściankach (Front, Right, Left, Back)
+-------------------------------------------------------------------------------
+
+---------------------------------------
+-- FRONT
+---------------------------------------
+
+fixCornerFrontUp :: CubeWithMoves -> CubeWithMoves
+fixCornerFrontUp cw
+  | front !! 0 == White = go $ fixCornerFrontDownLeft $ applyMovesWhiteUp Front [F', D', F, D] cw
+  | front !! 2 == White = go $ fixCornerFrontDownRight $ applyMovesWhiteUp Front [F, D, F', D'] cw
+  | front !! 6 == White = go $ fixCornerFrontDownLeft cw
+  | front !! 8 == White = go $ fixCornerFrontDownRight cw
+  | down !! 0 == White = go $ shiftCornerDownToFront cw
+  | down !! 2 == White = go $ applyMovesWhiteUp Front [D'] cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    front = getSide Front c
+    down = getSide Down c
+    go = fixCornerFrontUp
+
+fixCornerFrontDownLeft :: CubeWithMoves -> CubeWithMoves
+fixCornerFrontDownLeft cw
+  | down !! 0 == Red = applyMovesWhiteUp Front [D, L, D', L'] cw
+  | otherwise = fixCornerRightDownLeft $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+fixCornerFrontDownRight :: CubeWithMoves -> CubeWithMoves
+fixCornerFrontDownRight cw
+  | down !! 2 == Red = applyMovesWhiteUp Front [D', R', D, R] cw
+  | otherwise = fixCornerRightDownRight $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+-- | Jeśli na dole mamy biały róg dla Front,
+--   sprawdzamy, czy jest już w odpowiednim miejscu (left !! 8 == Red, front !! 6 == Green).
+shiftCornerDownToFront :: CubeWithMoves -> CubeWithMoves
+shiftCornerDownToFront cw
+  | left !! 8 == Red && front !! 6 == Green = applyMovesWhiteUp Front [D, L, D', L'] cw
+  | otherwise = shiftCornerDownToRight $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    left = getSide Left c
+    front = getSide Front c
+
+---------------------------------------
+-- RIGHT
+---------------------------------------
+
+fixCornerRightUp :: CubeWithMoves -> CubeWithMoves
+fixCornerRightUp cw
+  | right !! 0 == White = go $ fixCornerRightDownLeft $ applyMovesWhiteUp Right [F', D', F, D] cw
+  | right !! 2 == White = go $ fixCornerRightDownRight $ applyMovesWhiteUp Right [F, D, F', D'] cw
+  | right !! 6 == White = go $ fixCornerRightDownLeft cw
+  | right !! 8 == White = go $ fixCornerRightDownRight cw
+  | down !! 2 == White = go $ shiftCornerDownToRight cw
+  | down !! 8 == White = go $ applyMovesWhiteUp Right [D'] cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    right = getSide Right c
+    down = getSide Down c
+    go = fixCornerRightUp
+
+fixCornerRightDownLeft :: CubeWithMoves -> CubeWithMoves
+fixCornerRightDownLeft cw
+  | down !! 2 == Blue = applyMovesWhiteUp Right [D, L, D', L'] cw
+  | otherwise = fixCornerBackDownLeft $ applyMovesWhiteUp Right [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+fixCornerRightDownRight :: CubeWithMoves -> CubeWithMoves
+fixCornerRightDownRight cw
+  | down !! 8 == Blue = applyMovesWhiteUp Right [D', R', D, R] cw
+  | otherwise = fixCornerBackDownRight $ applyMovesWhiteUp Right [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+-- | Jeśli na dole mamy biały róg do Right, sprawdzamy, czy front !! 8 == Blue, right !! 6 == Red.
+shiftCornerDownToRight :: CubeWithMoves -> CubeWithMoves
+shiftCornerDownToRight cw
+  | front !! 8 == Blue && right !! 6 == Red = applyMovesWhiteUp Right [D, L, D', L'] cw
+  | otherwise = shiftCornerDownToBack (applyMovesWhiteUp Right [D] cw)
+  where
+    (c, _) = cw
+    front = getSide Front c
+    right = getSide Right c
+
+---------------------------------------
+-- LEFT
+---------------------------------------
+
+fixCornerLeftUp :: CubeWithMoves -> CubeWithMoves
+fixCornerLeftUp cw
+  | left !! 0 == White = go $ fixCornerLeftDownLeft $ applyMovesWhiteUp Left [F', D', F, D] cw
+  | left !! 2 == White = go $ fixCornerLeftDownRight $ applyMovesWhiteUp Left [F, D, F', D'] cw
+  | left !! 6 == White = go $ fixCornerLeftDownLeft cw
+  | left !! 8 == White = go $ fixCornerLeftDownRight cw
+  | down !! 6 == White = go $ shiftCornerDownToLeft cw
+  | down !! 0 == White = go $ applyMovesWhiteUp Left [D'] cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    left = getSide Left c
+    down = getSide Down c
+    go = fixCornerLeftUp
+
+fixCornerLeftDownLeft :: CubeWithMoves -> CubeWithMoves
+fixCornerLeftDownLeft cw
+  | down !! 6 == Green = applyMovesWhiteUp Left [D, L, D', L'] cw
+  | otherwise = fixCornerFrontDownLeft $ applyMovesWhiteUp Left [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+fixCornerLeftDownRight :: CubeWithMoves -> CubeWithMoves
+fixCornerLeftDownRight cw
+  | down !! 0 == Green = applyMovesWhiteUp Left [D', R', D, R] cw
+  | otherwise = fixCornerFrontDownRight $ applyMovesWhiteUp Left [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+shiftCornerDownToLeft :: CubeWithMoves -> CubeWithMoves
+shiftCornerDownToLeft cw
+  | back !! 8 == Green && left !! 6 == Orange = applyMovesWhiteUp Left [D, L, D', L'] cw
+  | otherwise = shiftCornerDownToFront (applyMovesWhiteUp Left [D] cw)
+  where
+    (c, _) = cw
+    back = getSide Back c
+    left = getSide Left c
+
+---------------------------------------
+-- BACK
+---------------------------------------
+
+fixCornerBackUp :: CubeWithMoves -> CubeWithMoves
+fixCornerBackUp cw
+  | back !! 0 == White = go $ fixCornerBackDownLeft $ applyMovesWhiteUp Back [F', D', F, D] cw
+  | back !! 2 == White = go $ fixCornerBackDownRight $ applyMovesWhiteUp Back [F, D, F', D'] cw
+  | back !! 6 == White = go $ fixCornerBackDownLeft cw
+  | back !! 8 == White = go $ fixCornerBackDownRight cw
+  | down !! 8 == White = go $ shiftCornerDownToBack cw
+  | down !! 6 == White = go $ applyMovesWhiteUp Back [D'] cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    back = getSide Back c
+    down = getSide Down c
+    go = fixCornerBackUp
+
+fixCornerBackDownLeft :: CubeWithMoves -> CubeWithMoves
+fixCornerBackDownLeft cw
+  | down !! 8 == Orange = applyMovesWhiteUp Back [D, L, D', L'] cw
+  | otherwise = fixCornerLeftDownLeft $ applyMovesWhiteUp Back [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+fixCornerBackDownRight :: CubeWithMoves -> CubeWithMoves
+fixCornerBackDownRight cw
+  | down !! 6 == Orange = applyMovesWhiteUp Back [D', R', D, R] cw
+  | otherwise = fixCornerLeftDownRight $ applyMovesWhiteUp Back [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+shiftCornerDownToBack :: CubeWithMoves -> CubeWithMoves
+shiftCornerDownToBack cw
+  | right !! 8 == Orange && back !! 6 == Blue = applyMovesWhiteUp Back [D, L, D', L'] cw
+  | otherwise = shiftCornerDownToLeft (applyMovesWhiteUp Back [D] cw)
+  where
+    (c, _) = cw
+    right = getSide Right c
+    back = getSide Back c
+
+-------------------------------------------------------------------------------
+-- 2) Środkowa warstwa (Mid Layer)
+-------------------------------------------------------------------------------
+
+-- | Układanie środkowej warstwy:
+--   - sprawdza, czy jest ułożona (areMidLayerEdgesAligned),
+--   - jeśli nie, rekurencyjnie wywołuje 'fixMidLayerEdges'.
+solveMidLayerEdges :: CubeWithMoves -> CubeWithMoves
+solveMidLayerEdges cw
+  | areMidLayerEdgesAligned cw = cw
+  | otherwise = solveMidLayerEdges (fixMidLayerEdges cw)
+
+-- | Sprawdza, czy środkowa warstwa (indeksy 3,5 na Front,Left,Right,Back) jest OK.
+--   * Front (3,5) = Red
+--   * Left  (3,5) = Green
+--   * Back  (3,5) = Orange
+--   * Right (3,5) = Blue
+areMidLayerEdgesAligned :: CubeWithMoves -> Bool
+areMidLayerEdgesAligned (cube, _) =
+  front !! 3 == Red
+    && front !! 5 == Red
+    && left !! 3 == Green
+    && left !! 5 == Green
+    && back !! 3 == Orange
+    && back !! 5 == Orange
+    && right !! 3 == Blue
+    && right !! 5 == Blue
+  where
+    (front, left, back, right, _, _) = getSides cube
+
+-- | Główna funkcja naprawcza dla środkowej warstwy:
+--   1) przenosi nieprawidłowe krawędzie do góry (moveInvalidEdges...),
+--   2) próbuje wstawić je poprawnie (fix...MidLayer).
+fixMidLayerEdges :: CubeWithMoves -> CubeWithMoves
+fixMidLayerEdges cw =
+  moveInvalidEdgesFront2Up $
+    fixLeftMidLayerEdge $
+      fixBackMidLayerEdge $
+        fixRightMidLayerEdge $
+          fixFrontMidLayerEdge cw
+
+-------------------------------------------------------------------------------
+-- a) Przenoszenie błędnych krawędzi do góry
+-------------------------------------------------------------------------------
+
+moveInvalidEdgesFront2Up :: CubeWithMoves -> CubeWithMoves
+moveInvalidEdgesFront2Up cw
+  | front !! 3 /= Red || left !! 5 /= Green =
+      fixFrontMidLayerEdge $ applyMovesWhiteDown Front [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      moveInvalidEdgesRight2Up cw
+  where
+    (cube, _) = cw
+    (front, left, back, right, _, _) = getSides cube
+
+moveInvalidEdgesRight2Up :: CubeWithMoves -> CubeWithMoves
+moveInvalidEdgesRight2Up cw
+  | front !! 5 /= Red || right !! 3 /= Blue =
+      fixRightMidLayerEdge $ applyMovesWhiteDown Right [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      moveInvalidEdgesBack2Up cw
+  where
+    (cube, _) = cw
+    (front, left, back, right, _, _) = getSides cube
+
+moveInvalidEdgesBack2Up :: CubeWithMoves -> CubeWithMoves
+moveInvalidEdgesBack2Up cw
+  | right !! 5 /= Blue || back !! 3 /= Orange =
+      fixBackMidLayerEdge $ applyMovesWhiteDown Back [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      moveInvalidEdgesLeft2Up cw
+  where
+    (cube, _) = cw
+    (front, left, back, right, _, _) = getSides cube
+
+moveInvalidEdgesLeft2Up :: CubeWithMoves -> CubeWithMoves
+moveInvalidEdgesLeft2Up cw
+  | back !! 5 /= Orange || left !! 3 /= Green =
+      fixLeftMidLayerEdge $ applyMovesWhiteDown Left [U, R, U', R', U', F', U, F] cw
+  | otherwise = cw
+  where
+    (cube, _) = cw
+    (front, left, back, right, _, _) = getSides cube
+
+-------------------------------------------------------------------------------
+-- b) Wstawianie krawędzi w środkową warstwę (Front / Right / Back / Left)
+-------------------------------------------------------------------------------
+
+fixFrontMidLayerEdge :: CubeWithMoves -> CubeWithMoves
+fixFrontMidLayerEdge cw
+  | front !! 7 /= Yellow && down !! 1 /= Yellow = insertEdgeFrontMidLayer cw
+  | otherwise = cw
+  where
+    (cube, _) = cw
+    front = getSide Front cube
+    down = getSide Down cube
+
+fixRightMidLayerEdge :: CubeWithMoves -> CubeWithMoves
+fixRightMidLayerEdge cw
+  | right !! 7 /= Yellow && down !! 5 /= Yellow = insertEdgeRightMidLayer cw
+  | otherwise = cw
+  where
+    (cube, _) = cw
+    right = getSide Right cube
+    down = getSide Down cube
+
+fixBackMidLayerEdge :: CubeWithMoves -> CubeWithMoves
+fixBackMidLayerEdge cw
+  | back !! 7 /= Yellow && down !! 7 /= Yellow = insertEdgeBackMidLayer cw
+  | otherwise = cw
+  where
+    (cube, _) = cw
+    back = getSide Back cube
+    down = getSide Down cube
+
+fixLeftMidLayerEdge :: CubeWithMoves -> CubeWithMoves
+fixLeftMidLayerEdge cw
+  | left !! 7 /= Yellow && down !! 3 /= Yellow = insertEdgeLeftMidLayer cw
+  | otherwise = cw
+  where
+    (cube, _) = cw
+    left = getSide Left cube
+    down = getSide Down cube
+
+-------------------------------------------------------------------------------
+-- c) Konkretne sekwencje wstawiające krawędź w odpowiednie miejsce
+-------------------------------------------------------------------------------
+
+-- |
+--  Jeśli 'front !! 7 == Red' i 'down !! 1 == Blue',
+--     wykonujemy [U', L', U, L, U, F, U', F'] (przesuwa krawędź do Right).
+--  Jeśli 'front !! 7 == Red' i 'down !! 1 == Green',
+--     wykonujemy [U, R, U', R', U', F', U, F] (przesuwa krawędź do Left).
+--  W innym wypadku obracamy dolną warstwę ([D]) i próbujemy wstawić krawędź do Right.
+insertEdgeFrontMidLayer :: CubeWithMoves -> CubeWithMoves
+insertEdgeFrontMidLayer cw
+  | front !! 7 == Red && down !! 1 == Blue =
+      applyMovesWhiteDown Front [U', L', U, L, U, F, U', F'] cw
+  | front !! 7 == Red && down !! 1 == Green =
+      applyMovesWhiteDown Front [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      insertEdgeRightMidLayer (applyMovesWhiteUp Front [D] cw)
+  where
+    (c, _) = cw
+    front = getSide Front c
+    down = getSide Down c
+
+insertEdgeRightMidLayer :: CubeWithMoves -> CubeWithMoves
+insertEdgeRightMidLayer cw
+  | right !! 7 == Blue && down !! 5 == Orange =
+      applyMovesWhiteDown Right [U', L', U, L, U, F, U', F'] cw
+  | right !! 7 == Blue && down !! 5 == Red =
+      applyMovesWhiteDown Right [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      insertEdgeBackMidLayer (applyMovesWhiteUp Front [D] cw)
+  where
+    (c, _) = cw
+    right = getSide Right c
+    down = getSide Down c
+
+insertEdgeBackMidLayer :: CubeWithMoves -> CubeWithMoves
+insertEdgeBackMidLayer cw
+  | back !! 7 == Orange && down !! 7 == Green =
+      applyMovesWhiteDown Back [U', L', U, L, U, F, U', F'] cw
+  | back !! 7 == Orange && down !! 7 == Blue =
+      applyMovesWhiteDown Back [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      insertEdgeLeftMidLayer (applyMovesWhiteUp Front [D] cw)
+  where
+    (c, _) = cw
+    back = getSide Back c
+    down = getSide Down c
+
+insertEdgeLeftMidLayer :: CubeWithMoves -> CubeWithMoves
+insertEdgeLeftMidLayer cw
+  | left !! 7 == Green && down !! 3 == Red =
+      applyMovesWhiteDown Left [U', L', U, L, U, F, U', F'] cw
+  | left !! 7 == Green && down !! 3 == Orange =
+      applyMovesWhiteDown Left [U, R, U', R', U', F', U, F] cw
+  | otherwise =
+      insertEdgeFrontMidLayer (applyMovesWhiteUp Front [D] cw)
+  where
+    (c, _) = cw
+    left = getSide Left c
+    down = getSide Down c
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\SolveOLL.hs =====
+module SolveOLL
+  ( solveOLL,
+  )
+where
+
+import Rotations
+import Types
+import Utils
+import Prelude hiding (Left, Right)
+
+-------------------------------------------------------------------------------
+-- Faza 3: OLL (Orientation of the Last Layer)
+-------------------------------------------------------------------------------
+
+-- |
+--  Główna funkcja wykonująca etap OLL (Orientacja Ostatniej Warstwy):
+--   1) Ułożenie żółtego krzyża (krawędzi),
+--   2) Ułożenie (zorientowanie) żółtych rogów.
+--
+--  UWAGA: Jeśli w ramach OLL masz jeszcze inne kroki (np. pewne dodatkowe algorytmy
+--  do pełnego orientowania rogów), możesz je tutaj dodać.
+solveOLL :: CubeWithMoves -> CubeWithMoves
+solveOLL cw =
+  let cwCross = completeYellowCross cw -- ułożenie żółtego krzyża
+      cwCorners = orientYellowCorners cwCross -- orientacja żółtych rogów
+   in cwCorners
+
+-------------------------------------------------------------------------------
+-- 3.1 - Ułożenie (orientacja) żółtego krzyża
+-------------------------------------------------------------------------------
+
+-- |
+--  Główna funkcja do ułożenia żółtego krzyża na dolnej ściance (Down).
+--  Sprawdza, czy krawędzie Down (indeksy 1,3,5,7) są koloru Yellow (`isYellowCrossDone`).
+--  Jeśli tak, zwraca stan bez zmian.
+--  W przeciwnym razie wywołuje rekurencyjnie `fixYellowEdgesCross`.
+completeYellowCross :: CubeWithMoves -> CubeWithMoves
+completeYellowCross cw
+  | isYellowCrossDone cw = cw
+  | otherwise = completeYellowCross (fixYellowEdgesCross cw)
+
+-- | Sprawdza, czy 4 krawędzie dolnej ścianki (Down) - indeksy 1,3,5,7 - są żółte.
+isYellowCrossDone :: CubeWithMoves -> Bool
+isYellowCrossDone cw =
+  down !! 1 == Yellow
+    && down !! 3 == Yellow
+    && down !! 5 == Yellow
+    && down !! 7 == Yellow
+  where
+    down = getSide Down (fst cw)
+
+-- |
+--  Naprawia (ustawia) żółty krzyż na dolnej ściance,
+--  używając sekwencji ruchów [F, U, R, U', R', F'].
+--
+--  W zależności od tego, które krawędzie są już żółte (down !! 1,3,5,7),
+--  wybiera odpowiednią ściankę (Front, Right, Left, Back), na której wykonuje ruch.
+--
+--  Jeśli żadna konfiguracja nie pasuje (else), domyślnie używa Front.
+fixYellowEdgesCross :: CubeWithMoves -> CubeWithMoves
+fixYellowEdgesCross cw
+  | down !! 1 == Yellow && down !! 3 == Yellow =
+      applyMovesWhiteDown Back [F, U, R, U', R', F'] cw
+  | down !! 1 == Yellow && down !! 5 == Yellow =
+      applyMovesWhiteDown Left [F, U, R, U', R', F'] cw
+  | down !! 5 == Yellow && down !! 7 == Yellow =
+      applyMovesWhiteDown Front [F, U, R, U', R', F'] cw
+  | down !! 3 == Yellow && down !! 7 == Yellow =
+      applyMovesWhiteDown Right [F, U, R, U', R', F'] cw
+  | down !! 1 == Yellow && down !! 7 == Yellow =
+      applyMovesWhiteDown Left [F, U, R, U', R', F'] cw
+  | down !! 3 == Yellow && down !! 5 == Yellow =
+      applyMovesWhiteDown Front [F, U, R, U', R', F'] cw
+  | otherwise =
+      applyMovesWhiteDown Front [F, U, R, U', R', F'] cw
+  where
+    down = getSide Down (fst cw)
+
+-------------------------------------------------------------------------------
+-- 3.2 - Ułożenie (orientacja) żółtych rogów
+-------------------------------------------------------------------------------
+
+-- |
+--  Główna funkcja do orientowania żółtych rogów.
+--  Sprawdza, czy ścianka 'Down' jest już cała żółta (indeksy 0..8),
+--  jeśli tak - nic nie robi.
+--  W przeciwnym razie wywołuje rekurencyjnie `fixYellowCornersOrientation`.
+orientYellowCorners :: CubeWithMoves -> CubeWithMoves
+orientYellowCorners cw
+  | isYellowFaceComplete cw = cw
+  | otherwise = orientYellowCorners (fixYellowCornersOrientation cw)
+
+-- |
+--  Sprawdza, czy wszystkie pola ścianki Down (0..8) są żółte.
+--  Czyli czy dolna ścianka jest w całości żółta.
+isYellowFaceComplete :: CubeWithMoves -> Bool
+isYellowFaceComplete cw =
+  all (== Yellow) [down !! i | i <- [0 .. 8], i /= 4]
+  where
+    -- ewentualnie: [0..8] bo w typowym notacji rubik'a środek i tak jest żółty
+
+    down = getSide Down (fst cw)
+
+-- |
+--  Liczy, ile rogów ścianki Down (pozycje 0,2,6,8) jest żółtych,
+--  zwraca ich liczbę.
+countYellowCorners :: CubeWithMoves -> Int
+countYellowCorners cw =
+  length $
+    filter
+      (== Yellow)
+      [down !! 0, down !! 2, down !! 6, down !! 8]
+  where
+    down = getSide Down (fst cw)
+
+-- |
+--  Sprawdza, czy cztery rogi ścian (Front, Left, Right, Back)
+--  są w prawidłowych kolorach (front=Red, left=Green, right=Blue, back=Orange)
+--  na indeksach 6 i 8.
+areCornersProperlyColored :: CubeWithMoves -> Bool
+areCornersProperlyColored cw =
+  front !! 6 == Red
+    && front !! 8 == Red
+    && left !! 6 == Green
+    && left !! 8 == Green
+    && right !! 6 == Blue
+    && right !! 8 == Blue
+    && back !! 6 == Orange
+    && back !! 8 == Orange
+  where
+    (front, left, back, right, _, _) = getSides (fst cw)
+
+-- |
+--  Naprawia orientację żółtych rogów według liczby już żółtych rogów.
+--  - Jeśli down !! 2 jest żółty i mamy tylko 1 żółty róg, robimy [R, U, R', U, R, U, U, R']
+--  - Jeśli right !! 6 jest żółty i (countYellowCorners==0), robimy ...
+--  - Jeśli front !! 8 jest żółty i (countYellowCorners==2), robimy ...
+--  - inaczej obracamy dół [D] i próbujemy ponownie.
+--
+--  Zwróć uwagę, że to standardowa heurystyka OLL - jeśli masz inne algorytmy, można je podmienić.
+fixYellowCornersOrientation :: CubeWithMoves -> CubeWithMoves
+fixYellowCornersOrientation cw
+  | down !! 2 == Yellow && (countYellowCorners cw == 1) =
+      applyMovesWhiteDown Front [R, U, R', U, R, U, U, R'] cw
+  | right !! 6 == Yellow && (countYellowCorners cw == 0) =
+      applyMovesWhiteDown Front [R, U, R', U, R, U, U, R'] cw
+  | front !! 8 == Yellow && (countYellowCorners cw == 2) =
+      applyMovesWhiteDown Front [R, U, R', U, R, U, U, R'] cw
+  | otherwise =
+      applyMovesWhiteUp Front [D] cw
+  where
+    (front, left, back, right, up, down) = getSides (fst cw)
+
+-------------------------------------------------------------------------------
+-- Pomocnicze Funkcje
+-------------------------------------------------------------------------------
+
+-- |
+--  Sprawdza, czy dana ściana jest w pełni ułożona (9 pól) w docelowym kolorze
+--  (wynik `getTargetSideColor side`).
+isSideSolved :: CubeWithMoves -> Side -> Bool
+isSideSolved cw side =
+  all (== targetColor) (getSide side (fst cw))
+  where
+    targetColor = getTargetSideColor side
+
+-- |
+--  Sprawdza, czy mamy "podwójnie dobrze" ustawione rogi na przeciwległych krawędziach:
+--    - (front !! 6 == Red && left !! 8 == Green && back !! 6 == Orange && right !! 8 == Blue)
+--    - (front !! 8 == Red && right !! 6 == Blue && back !! 8 == Orange && left !! 6 == Green)
+--
+--  Ta funkcja bywa używana w PLL (Permutation of the Last Layer),
+--  ale czasem również w zaawansowanych etapach OLL. Jeśli tu nie jest wykorzystywana,
+--  można ją zostawić jako pomocniczą lub przenieść do SolvePLL.
+hasTwoCorrectCorners :: CubeWithMoves -> Bool
+hasTwoCorrectCorners cw =
+  ( front !! 6 == Red
+      && left !! 8 == Green
+      && back !! 6 == Orange
+      && right !! 8 == Blue
+  )
+    || ( front !! 8 == Red
+           && right !! 6 == Blue
+           && back !! 8 == Orange
+           && left !! 6 == Green
+       )
+  where
+    (front, left, back, right, _, _) = getSides (fst cw)
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\SolvePLL.hs =====
+module SolvePLL
+  ( solvePLL,
+  )
+where
+
+import Rotations
+import Types
+import Utils
+import Prelude hiding (Left, Right)
+
+-------------------------------------------------------------------------------
+-- Faza 4: PLL (Permutation of the Last Layer)
+-------------------------------------------------------------------------------
+
+-- |
+--  Główna funkcja wykonująca etap PLL (Permutation of the Last Layer):
+--    1) Permutacja żółtych rogów
+--    2) Permutacja żółtych krawędzi
+solvePLL :: CubeWithMoves -> CubeWithMoves
+solvePLL cw =
+  let cwCorners = permuteYellowCorners cw
+      cwEdges = permuteYellowEdges cwCorners
+   in cwEdges
+
+-------------------------------------------------------------------------------
+-- 4.1: Permutacja żółtych rogów
+-------------------------------------------------------------------------------
+
+-- |
+--  Sprawdza, czy rogi (Front, Left, Right, Back) w indeksach 6 i 8 są już
+--  we właściwych kolorach. Jeśli tak – kończy, w przeciwnym razie
+--  rekurencyjnie wywołuje 'permuteCornersStep'.
+permuteYellowCorners :: CubeWithMoves -> CubeWithMoves
+permuteYellowCorners cw
+  | areCornersCorrectlyPermuted cw = cw
+  | otherwise = permuteYellowCorners (permuteCornersStep cw)
+
+-- |
+--  Sprawdza, czy rogi w indeksach 6 i 8 na ścianach (Front, Left, Right, Back)
+--  mają docelowe kolory:
+--    * Front: (6,8) = Red
+--    * Left:  (6,8) = Green
+--    * Right: (6,8) = Blue
+--    * Back:  (6,8) = Orange
+areCornersCorrectlyPermuted :: CubeWithMoves -> Bool
+areCornersCorrectlyPermuted cw =
+  front !! 6 == Red
+    && front !! 8 == Red
+    && left !! 6 == Green
+    && left !! 8 == Green
+    && right !! 6 == Blue
+    && right !! 8 == Blue
+    && back !! 6 == Orange
+    && back !! 8 == Orange
+  where
+    (front, left, back, right, _, _) = getSides (fst cw)
+
+-- |
+--  Sprawdza, czy dwie pary rogów są poprawnie ustawione na przeciwległych krawędziach:
+--     - (Front 6 == Red,   Left 8 == Green,  Back 6 == Orange, Right 8 == Blue)
+--     - (Front 8 == Red,   Right 6 == Blue,  Back 8 == Orange, Left 6 == Green)
+--
+--  Jeśli tak, w pewnych algorytmach PLL można użyć jednego kroku do dokończenia permutacji rogów.
+hasTwoCorrectCorners :: CubeWithMoves -> Bool
+hasTwoCorrectCorners cw =
+  ( front !! 6 == Red
+      && left !! 8 == Green
+      && back !! 6 == Orange
+      && right !! 8 == Blue
+  )
+    || ( front !! 8 == Red
+           && right !! 6 == Blue
+           && back !! 8 == Orange
+           && left !! 6 == Green
+       )
+  where
+    (front, left, back, right, _, _) = getSides (fst cw)
+
+-- |
+--  Jednokrokowa funkcja (rekurencyjnie wywoływana w 'permuteYellowCorners')
+--  która:
+--   1) sprawdza, czy któraś ściana (Back/Front/Right/Left) ma już poprawne rogi,
+--      i wówczas wykonuje ruch `[R', F, R', B, B, R, F', R', B, B, R, R]`.
+--   2) jeśli nie, sprawdza 'hasTwoCorrectCorners', i też wykonuje powyższą sekwencję,
+--   3) w przeciwnym razie obraca dolną warstwę ([D]) i próbuje ponownie.
+permuteCornersStep :: CubeWithMoves -> CubeWithMoves
+permuteCornersStep cw
+  | back !! 6 == Orange && back !! 8 == Orange =
+      applyMovesWhiteDown Front movement cw
+  | front !! 6 == Red && front !! 8 == Red =
+      applyMovesWhiteDown Back movement cw
+  | right !! 6 == Blue && right !! 8 == Blue =
+      applyMovesWhiteDown Left movement cw
+  | left !! 6 == Green && left !! 8 == Green =
+      applyMovesWhiteDown Right movement cw
+  | hasTwoCorrectCorners cw =
+      applyMovesWhiteDown Front movement cw
+  | otherwise =
+      applyMovesWhiteUp Front [D] cw
+  where
+    (front, left, back, right, _, _) = getSides (fst cw)
+    movement = [R', F, R', B, B, R, F', R', B, B, R, R]
+
+-------------------------------------------------------------------------------
+-- 4.2: Permutacja żółtych krawędzi
+-------------------------------------------------------------------------------
+
+-- |
+--  Sprawdza, czy krawędzie (Front, Left, Right, Back) w indeksie 7
+--  mają już kolory docelowe:
+--    * Front(7) = Red
+--    * Left(7)  = Green
+--    * Right(7) = Blue
+--    * Back(7)  = Orange
+--
+--  Jeśli tak, kończy; w przeciwnym razie rekurencyjnie wywołuje `permuteEdgesStep`.
+positionYellowEdges :: CubeWithMoves -> CubeWithMoves
+positionYellowEdges cw
+  | areEdgesCorrectlyPermuted cw = cw
+  | otherwise = positionYellowEdges (permuteEdgesStep cw)
+
+-- |
+--  Pomocnicza funkcja, aby utrzymać spójność nazewnictwa:
+--  "permuteYellowEdges" = "positionYellowEdges"
+--  Zostaje w solvePLL c: cwEdges = positionYellowEdges cwCorners
+areEdgesCorrectlyPermuted :: CubeWithMoves -> Bool
+areEdgesCorrectlyPermuted cw =
+  front !! 7 == Red
+    && left !! 7 == Green
+    && right !! 7 == Blue
+    && back !! 7 == Orange
+  where
+    (front, left, back, right, _, _) = getSides (fst cw)
+
+-- |
+--  Główna funkcja do permutacji (przesunięcia) żółtych krawędzi:
+--  - Jeśli któraś ściana jest już w pełni gotowa (`isSideFullyColored`),
+--    wykonujemy sekwencję [F,F, U, L, R', F,F, L', R, U, F,F] z translacją
+--    na ściance przeciwległej.
+--  - Jeśli żadna nie jest gotowa, wykonujemy ruch domyślny na Front.
+--
+--  (To jeden z typowych algorytmów PLL do permutowania krawędzi.)
+permuteEdgesStep :: CubeWithMoves -> CubeWithMoves
+permuteEdgesStep cw
+  | isSideFullyColored cw Front =
+      applyMovesWhiteDown Back movement cw
+  | isSideFullyColored cw Right =
+      applyMovesWhiteDown Left movement cw
+  | isSideFullyColored cw Back =
+      applyMovesWhiteDown Front movement cw
+  | isSideFullyColored cw Left =
+      applyMovesWhiteDown Right movement cw
+  | otherwise =
+      applyMovesWhiteDown Front movement cw
+  where
+    movement = [F, F, U, L, R', F, F, L', R, U, F, F]
+
+permuteYellowEdges :: CubeWithMoves -> CubeWithMoves
+permuteYellowEdges cw
+  | areEdgesCorrectlyPermuted cw = cw
+  | otherwise = permuteYellowEdges (permuteEdgesStep cw)
+
+-------------------------------------------------------------------------------
+-- Dodatkowe funkcje pomocnicze
+-------------------------------------------------------------------------------
+
+-- |
+--  Sprawdza, czy dana ścianka jest w pełni gotowa (9 pól ma właściwy kolor).
+--  Używane w 'permuteEdgesStep'.
+isSideFullyColored :: CubeWithMoves -> Side -> Bool
+isSideFullyColored cw side =
+  all (== targetColor) (getSide side (fst cw))
+  where
+    targetColor = getTargetSideColor side
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\SolveWhiteCross.hs =====
+module SolveWhiteCross where
+
+import Rotations
+import Types
+import Utils
+import Prelude hiding (Left, Right)
+
+-------------------------------------------------------------------------------
+-- Faza 1: White Cross (Biały Krzyż)
+-------------------------------------------------------------------------------
+
+-- | Główna funkcja układająca biały krzyż na górnej ściance.
+-- Sprawdza, czy krzyż jest już ułożony ('checkCrossAndSides').
+-- Jeśli tak, zwraca kostkę bez zmian.
+-- Jeśli nie, rekurencyjnie wykonuje 'fixWhiteEdges'.
+solveWhiteCross :: CubeWithMoves -> CubeWithMoves
+solveWhiteCross cw
+  | checkCrossAndSides currentCube = cw
+  | otherwise = solveWhiteCross $ fixWhiteEdges cw
+  where
+    (currentCube, _) = cw
+
+-- | Sprawdza, czy górna ścianka ma biały krzyż (indeksy 1,3,5,7 białe).
+checkWhiteCross :: Cube -> Side -> Bool
+checkWhiteCross cube side =
+  up !! 1 == White
+    && up !! 3 == White
+    && up !! 5 == White
+    && up !! 7 == White
+  where
+    up = getSide side cube
+
+-- | Sprawdza, czy biały krzyż jest poprawnie ułożony:
+--   1) 4 krawędzie w ściance 'Up' mają kolor biały (checkWhiteCross),
+--   2) Środkowe pola sąsiadujących ścian (Front->Red, Right->Blue, Left->Green, Back->Orange).
+checkCrossAndSides :: Cube -> Bool
+checkCrossAndSides cube =
+  ( front !! 1 == Red
+      && right !! 1 == Blue
+      && left !! 1 == Green
+      && back !! 1 == Orange
+  )
+    && checkWhiteCross cube Up
+  where
+    (front, left, back, right, up, down) = getSides cube
+
+-- | Naprawia białe krawędzie w górnej warstwie (White Cross),
+--   wywołując kolejno funkcje zajmujące się krawędziami:
+--   - Red (Front),
+--   - Blue (Right),
+--   - Green (Left),
+--   - Orange (Back).
+fixWhiteEdges :: CubeWithMoves -> CubeWithMoves
+fixWhiteEdges =
+  fixOrangeEdgeOnUp
+    . fixGreenEdgeOnUp
+    . fixBlueEdgeOnUp
+    . fixRedEdgeOnUp
+
+-------------------------------------------------------------------------------
+-- Naprawa krawędzi RED (Front)
+-------------------------------------------------------------------------------
+
+fixRedEdgeOnUp :: CubeWithMoves -> CubeWithMoves
+fixRedEdgeOnUp cw
+  | front !! 1 == White = go $ moveRedEdgeFromDown $ applyMovesWhiteUp Front [F, F] cw
+  | front !! 3 == White = go $ moveRedEdgeFromDown $ applyMovesWhiteUp Front [F'] cw
+  | front !! 5 == White = go $ moveRedEdgeFromDown $ applyMovesWhiteUp Front [F] cw
+  | front !! 7 == White = go $ moveRedEdgeFromDown cw
+  | down !! 1 == White = go $ finalizeRedEdgeOnDown cw
+  | otherwise = cw
+  where
+    (currentCube, _) = cw
+    front = getSide Front currentCube
+    down = getSide Down currentCube
+    go = fixRedEdgeOnUp -- rekurencja
+
+-- | Jeśli w dolnej ściance (down !! 1) znajduje się biała krawędź z kolorem Red,
+--   przesuwa ją do górnej warstwy.
+moveRedEdgeFromDown :: CubeWithMoves -> CubeWithMoves
+moveRedEdgeFromDown cw
+  | down !! 1 == Red = applyMovesWhiteUp Front [D', L', F, L] cw
+  | otherwise = fixRightEdgeFromDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+-- | Jeżeli krawędź jest już w pozycji 'front !! 7' z kolorem Red,
+--   to przesuwamy ją dwukrotnym F. W przeciwnym razie idziemy do kolejnej ścianki.
+finalizeRedEdgeOnDown :: CubeWithMoves -> CubeWithMoves
+finalizeRedEdgeOnDown cw
+  | front !! 7 == Red = applyMovesWhiteUp Front [F, F] cw
+  | otherwise = finalizeBlueEdgeOnDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    front = getSide Front c
+
+-------------------------------------------------------------------------------
+-- Naprawa krawędzi BLUE (Right)
+-------------------------------------------------------------------------------
+
+fixBlueEdgeOnUp :: CubeWithMoves -> CubeWithMoves
+fixBlueEdgeOnUp cw
+  | right !! 1 == White = go $ moveBlueEdgeFromDown $ applyMovesWhiteUp Right [F, F] cw
+  | right !! 3 == White = go $ moveBlueEdgeFromDown $ applyMovesWhiteUp Right [F'] cw
+  | right !! 5 == White = go $ moveBlueEdgeFromDown $ applyMovesWhiteUp Right [F] cw
+  | right !! 7 == White = go $ moveBlueEdgeFromDown cw
+  | down !! 5 == White = go $ finalizeBlueEdgeOnDown cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    right = getSide Right c
+    down = getSide Down c
+    go = fixBlueEdgeOnUp
+
+moveBlueEdgeFromDown :: CubeWithMoves -> CubeWithMoves
+moveBlueEdgeFromDown cw
+  | down !! 5 == Blue = applyMovesWhiteUp Right [D', L', F, L] cw
+  | otherwise = fixBackEdgeFromDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+finalizeBlueEdgeOnDown :: CubeWithMoves -> CubeWithMoves
+finalizeBlueEdgeOnDown cw
+  | right !! 7 == Blue = applyMovesWhiteUp Right [F, F] cw
+  | otherwise = fixBackEdgeOnDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    right = getSide Right c
+
+-------------------------------------------------------------------------------
+-- Naprawa krawędzi GREEN (Left)
+-------------------------------------------------------------------------------
+
+fixGreenEdgeOnUp :: CubeWithMoves -> CubeWithMoves
+fixGreenEdgeOnUp cw
+  | left !! 1 == White = go $ moveGreenEdgeFromDown $ applyMovesWhiteUp Left [F, F] cw
+  | left !! 3 == White = go $ moveGreenEdgeFromDown $ applyMovesWhiteUp Left [F'] cw
+  | left !! 5 == White = go $ moveGreenEdgeFromDown $ applyMovesWhiteUp Left [F] cw
+  | left !! 7 == White = go $ moveGreenEdgeFromDown cw
+  | down !! 3 == White = go $ finalizeGreenEdgeOnDown cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    left = getSide Left c
+    down = getSide Down c
+    go = fixGreenEdgeOnUp
+
+moveGreenEdgeFromDown :: CubeWithMoves -> CubeWithMoves
+moveGreenEdgeFromDown cw
+  | down !! 3 == Green = applyMovesWhiteUp Left [D', L', F, L] cw
+  | otherwise = moveRedEdgeFromDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+finalizeGreenEdgeOnDown :: CubeWithMoves -> CubeWithMoves
+finalizeGreenEdgeOnDown cw
+  | left !! 7 == Green = applyMovesWhiteUp Left [F, F] cw
+  | otherwise = finalizeRedEdgeOnDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    left = getSide Left c
+
+-------------------------------------------------------------------------------
+-- Naprawa krawędzi ORANGE (Back)
+-------------------------------------------------------------------------------
+
+fixOrangeEdgeOnUp :: CubeWithMoves -> CubeWithMoves
+fixOrangeEdgeOnUp cw
+  | back !! 1 == White = go $ moveOrangeEdgeFromDown $ applyMovesWhiteUp Back [F, F] cw
+  | back !! 3 == White = go $ moveOrangeEdgeFromDown $ applyMovesWhiteUp Back [F'] cw
+  | back !! 5 == White = go $ moveOrangeEdgeFromDown $ applyMovesWhiteUp Back [F] cw
+  | back !! 7 == White = go $ moveOrangeEdgeFromDown cw
+  | down !! 7 == White = go $ finalizeOrangeEdgeOnDown cw
+  | otherwise = cw
+  where
+    (c, _) = cw
+    back = getSide Back c
+    down = getSide Down c
+    go = fixOrangeEdgeOnUp
+
+moveOrangeEdgeFromDown :: CubeWithMoves -> CubeWithMoves
+moveOrangeEdgeFromDown cw
+  | down !! 7 == Orange = applyMovesWhiteUp Back [D', L', F, L] cw
+  | otherwise = moveGreenEdgeFromDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    down = getSide Down c
+
+finalizeOrangeEdgeOnDown :: CubeWithMoves -> CubeWithMoves
+finalizeOrangeEdgeOnDown cw
+  | back !! 7 == Orange = applyMovesWhiteUp Back [F, F] cw
+  | otherwise = finalizeGreenEdgeOnDown $ applyMovesWhiteUp Front [D] cw
+  where
+    (c, _) = cw
+    back = getSide Back c
+
+-------------------------------------------------------------------------------
+-- Pomocnicze funkcje łączące krawędzie
+-- (np. z Right przechodzimy do Back itd.)
+-------------------------------------------------------------------------------
+
+-- | Gdy przeniesienie Red z dołu się nie powiedzie, próbujemy Blue (Right).
+fixRightEdgeFromDown :: CubeWithMoves -> CubeWithMoves
+fixRightEdgeFromDown = fixBlueEdgeOnUp
+
+-- | Gdy przeniesienie Blue z dołu się nie powiedzie, próbujemy Back (Orange).
+fixBackEdgeFromDown :: CubeWithMoves -> CubeWithMoves
+fixBackEdgeFromDown = fixOrangeEdgeOnUp
+
+-- | Gdy naprawa Blue na dole się nie uda, idziemy do Orange
+fixBackEdgeOnDown :: CubeWithMoves -> CubeWithMoves
+fixBackEdgeOnDown = finalizeOrangeEdgeOnDown
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\Solving.hs =====
+module Solving where
+
+import Rotations
+import SolveF2L (solveF2L)
+import SolveOLL (solveOLL)
+import SolvePLL (solvePLL)
+import SolveWhiteCross (solveWhiteCross)
+import Types
+import Prelude hiding (Left, Right)
+
+-- | Rozwiązuje kostkę metodą CFOP i zwraca:
+--   (finalCube, [(phaseName, Move)])
+solveCubePhases :: Cube -> (Cube, [(String, Move)])
+solveCubePhases c0 =
+  -- Faza 1: White Cross
+  let (c1, movesCross) = solveWhiteCross (c0, [])
+      taggedCross = map (\mv -> ("White Cross", mv)) movesCross
+
+      -- Faza 2: F2L
+      (c2, movesF2L) = solveF2L (c1, [])
+      taggedF2L = map (\mv -> ("F2L", mv)) movesF2L
+
+      -- Faza 3: OLL
+      (c3, movesOLL) = solveOLL (c2, [])
+      taggedOLL = map (\mv -> ("OLL", mv)) movesOLL
+
+      -- Faza 4: PLL
+      (c4, movesPLL) = solvePLL (c3, [])
+      taggedPLL = map (\mv -> ("PLL", mv)) movesPLL
+
+      allTagged = taggedCross ++ taggedF2L ++ taggedOLL ++ taggedPLL
+   in (c4, allTagged)
+
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\Types.hs =====
+module Types where
+
+import Prelude hiding (Left, Right)
+-- ewentualnie: import System.Environment (getArgs)
+-- ewentualnie: import System.IO (hPutStrLn, stderr)
+-- Zgodnie z Twoimi wytycznymi, unikamy innych importów
+
+-- | Typ reprezentujący dostępne kolory ścianek kostki Rubika.
+data Color
+    = White   -- ^ Biały
+    | Yellow  -- ^ Żółty
+    | Orange  -- ^ Pomarańczowy
+    | Green   -- ^ Zielony
+    | Red     -- ^ Czerwony
+    | Blue    -- ^ Niebieski
+    deriving (Eq, Show)
+
+-- | Typ reprezentujący poszczególne ścianki kostki Rubika.
+--   Każdy konstruktor to jedna ze stron:
+--   * Front
+--   * Up
+--   * Left
+--   * Right
+--   * Back
+--   * Down
+data Side
+    = Front
+    | Up
+    | Left
+    | Right
+    | Back
+    | Down
+    deriving (Eq, Show)
+
+-- | Krotka, w której:
+--   * 'Side' opisuje konkretną ściankę kostki
+--   * '[Color]' to lista kolorów poszczególnych pól na tej ściance
+type Face = (Side, [Color])
+
+-- | Lista wszystkich ścianek; reprezentacja całej kostki Rubika.
+type Cube = [Face]
+
+-- | Typ wyliczeniowy dla możliwych ruchów kostką Rubika.
+--   Apostrof (') oznacza obrót w przeciwną stronę niż standardowy (np. odwrotnie do wskazówek zegara).
+data Move
+    = U   -- ^ Obrót górnej ścianki zgodnie z ruchem wskazówek zegara
+    | U'  -- ^ Obrót górnej ścianki przeciwnie do ruchu wskazówek zegara
+    | D   -- ^ Obrót dolnej ścianki zgodnie z ruchem wskazówek zegara
+    | D'  -- ^ Obrót dolnej ścianki przeciwnie do ruchu wskazówek zegara
+    | L   -- ^ Obrót lewej ścianki zgodnie z ruchem wskazówek zegara
+    | L'  -- ^ Obrót lewej ścianki przeciwnie do ruchu wskazówek zegara
+    | R   -- ^ Obrót prawej ścianki zgodnie z ruchem wskazówek zegara
+    | R'  -- ^ Obrót prawej ścianki przeciwnie do ruchu wskazówek zegara
+    | F   -- ^ Obrót przedniej ścianki zgodnie z ruchem wskazówek zegara
+    | F'  -- ^ Obrót przedniej ścianki przeciwnie do ruchu wskazówek zegara
+    | B   -- ^ Obrót tylnej ścianki zgodnie z ruchem wskazówek zegara
+    | B'  -- ^ Obrót tylnej ścianki przeciwnie do ruchu wskazówek zegara
+    deriving (Eq, Show)
+
+
+type CubeWithMoves = (Cube, [Move])
+
+===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/rubikprzeobki\Utils.hs =====
+module Utils where
+
+import Types
+import Prelude hiding (Left, Right)
+
+-- | Zastępuje w liście do trzech elementów, które znajdują się
+--   pod wskazanymi indeksami. Krotka '(v1, v2, v3)' to nowe wartości,
+--   natomiast '(t1, t2, t3)' to indeksy, które mają zostać zastąpione.
+replace3 :: (a, a, a) -> (Int, Int, Int) -> [a] -> [a]
+replace3 (v1, v2, v3) (t1, t2, t3) target =
+  replace v3 t3 (replace v2 t2 (replace v1 t1 target))
+
+-- | Zastępuje w liście element o indeksie 'n' nową wartością 'value'.
+--   Gdy lista jest pusta lub 'n' jest poza jej zakresem, zwraca listę bez zmian.
+replace :: a -> Int -> [a] -> [a]
+replace _ _ [] = []
+replace value n (x : xs) =
+  if n == 0
+    then value : xs
+    else x : replace value (n - 1) xs
+
+{- Gettery i funkcje pomocnicze -}
+
+-- | Zwraca kostkę Rubika w stanie "ułożonym" w standardowej konfiguracji kolorów.
+getSolvedCube :: Cube
+getSolvedCube =
+  [ (Front, [Red, Red, Red, Red, Red, Red, Red, Red, Red]),
+    (Right, [Blue, Blue, Blue, Blue, Blue, Blue, Blue, Blue, Blue]),
+    (Back, [Orange, Orange, Orange, Orange, Orange, Orange, Orange, Orange, Orange]),
+    (Left, [Green, Green, Green, Green, Green, Green, Green, Green, Green]),
+    (Up, [White, White, White, White, White, White, White, White, White]),
+    (Down, [Yellow, Yellow, Yellow, Yellow, Yellow, Yellow, Yellow, Yellow, Yellow])
   ]
 
--- | Podmienia daną ściankę w strukturze 'CubeX' na nową (side, [ColorX]).
-replaceFace :: FaceSide -> FaceX -> CubeX -> CubeX
-replaceFace _    _    [] = []
-replaceFace side newFace (f@(s,_):rest)
-  | s == side  = newFace : rest
-  | otherwise  = f : replaceFace side newFace rest
+-- | Dla podanej ścianki 'Side' zwraca kolor, jaki standardowo powinien się tam znajdować.
+getTargetSideColor :: Side -> Color
+getTargetSideColor Up    = White
+getTargetSideColor Down  = Yellow
+getTargetSideColor Left  = Green
+getTargetSideColor Right = Blue
+getTargetSideColor Front = Red
+getTargetSideColor Back  = Orange
 
--- | Obrót 9-elementowej listy zgodnie z ruchem wskazówek zegara (3x3).
---   Indeksy w 3x3 macierzy:
---     0 1 2
---     3 4 5
---     6 7 8
-rotateFaceCW :: [ColorX] -> [ColorX]
-rotateFaceCW face =
-  [ face !! 6, face !! 3, face !! 0
-  , face !! 7, face !! 4, face !! 1
-  , face !! 8, face !! 5, face !! 2
-  ]
+-- | Zwraca listę kolorów znajdujących się na wskazanej ściance kostki.
+getSide :: Side -> Cube -> [Color]
+getSide side cube =
+  concat [snd face | face <- cube, side == fst face]
 
--- | Obrót 3x3 w stronę przeciwną
-rotateFaceCCW :: [ColorX] -> [ColorX]
-rotateFaceCCW face =
-  [ face !! 2, face !! 5, face !! 8
-  , face !! 1, face !! 4, face !! 7
-  , face !! 0, face !! 3, face !! 6
-  ]
+-- | Zwraca krotkę zawierającą listy kolorów wszystkich sześciu ścianek kostki
+--   w ustalonej kolejności: Front, Left, Back, Right, Up, Down.
+getSides :: Cube -> ([Color], [Color], [Color], [Color], [Color], [Color])
+getSides cube =
+  ( getSide Front cube,
+    getSide Left  cube,
+    getSide Back  cube,
+    getSide Right cube,
+    getSide Up    cube,
+    getSide Down  cube
+  )
 
--- | Proste wypisanie kostki na ekran
-printCube :: CubeX -> IO ()
-printCube [] = return ()
-printCube ((side, cols):xs) = do
-  putStrLn (show side ++ ": " ++ showColors cols)
-  printCube xs
+{- Translacja ruchów w zależności od położenia białej ścianki -}
 
-showColors :: [ColorX] -> String
-showColors [] = ""
-showColors (c:cs) = show c ++ " " ++ showColors cs
+-- | Tłumaczy ruchy kostki tak, aby ścianka z kolorem białym
+--   (aktualnie na podanej 'Side') została obrócona do góry.
+translateMoveWhiteUp :: Side -> Move -> Move
+translateMoveWhiteUp Front move = move
+translateMoveWhiteUp Up    move = move
+translateMoveWhiteUp Down  move = move
+translateMoveWhiteUp Right move
+  | move == L   = F
+  | move == L'  = F'
+  | move == R   = B
+  | move == R'  = B'
+  | move == F   = R
+  | move == F'  = R'
+  | move == B   = L
+  | move == B'  = L'
+  | otherwise   = move
+translateMoveWhiteUp Left move
+  | move == L   = B
+  | move == L'  = B'
+  | move == R   = F
+  | move == R'  = F'
+  | move == F   = L
+  | move == F'  = L'
+  | move == B   = R
+  | move == B'  = R'
+  | otherwise   = move
+translateMoveWhiteUp Back move
+  | move == L   = R
+  | move == L'  = R'
+  | move == R   = L
+  | move == R'  = L'
+  | move == F   = B
+  | move == F'  = B'
+  | move == B   = F
+  | move == B'  = F'
+  | otherwise   = move
 
+-- | Tłumaczy ruchy kostki tak, aby ścianka z kolorem białym
+--   (aktualnie na podanej 'Side') została obrócona na dół.
+translateMoveWhiteDown :: Side -> Move -> Move
+translateMoveWhiteDown Up   move = move
+translateMoveWhiteDown Down move = move
+translateMoveWhiteDown Front move
+  | move == U   = D
+  | move == U'  = D'
+  | move == D   = U
+  | move == D'  = U'
+  | move == L   = R
+  | move == L'  = R'
+  | move == R   = L
+  | move == R'  = L'
+  | otherwise   = move
+translateMoveWhiteDown Right move
+  | move == U   = D
+  | move == U'  = D'
+  | move == D   = U
+  | move == D'  = U'
+  | move == L   = B
+  | move == L'  = B'
+  | move == R   = F
+  | move == R'  = F'
+  | move == F   = R
+  | move == F'  = R'
+  | move == B   = L
+  | move == B'  = L'
+  | otherwise   = move
+translateMoveWhiteDown Left move
+  | move == U   = D
+  | move == U'  = D'
+  | move == D   = U
+  | move == D'  = U'
+  | move == L   = F
+  | move == L'  = F'
+  | move == R   = B
+  | move == R'  = B'
+  | move == F   = L
+  | move == F'  = L'
+  | move == B   = R
+  | move == B'  = R'
+  | otherwise   = move
+translateMoveWhiteDown Back move
+  | move == U   = D
+  | move == U'  = D'
+  | move == D   = U
+  | move == D'  = U'
+  | move == F   = B
+  | move == F'  = B'
+  | move == B   = F
+  | move == B'  = F'
+  | otherwise   = move
 
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage1_WhiteCross.hs =====
-module Stage1_WhiteCross
-  ( solveWhiteCrossPhase
-  ) where
+-- | Mapuje listę ruchów na nową listę, stosując 'translateMoveWhiteUp'.
+translateMovesWhiteUp :: Side -> [Move] -> [Move]
+translateMovesWhiteUp side = map (translateMoveWhiteUp side)
 
-import Prelude
-import RubikTypes
-import RubikRotations (addMoveToLog)
-import RubikUtils
-
--- | Główna funkcja fazy 1: biała kreska
---   Zwraca (CubeX, [MoveX]) z ułożonym białym krzyżem na górnej ściance (FUp).
-solveWhiteCrossPhase :: CubeWithLog2 -> CubeWithLog2
-solveWhiteCrossPhase cwl =
-  let cwl' = fixWhiteEdges cwl
-  in if checkWhiteCross (fst cwl') then cwl' else solveWhiteCrossPhase cwl'
-
--- | Sprawdza, czy białe krawędzie (indeksy [1,3,5,7]) na FUp są białe,
---   i czy boczne kolory pasują do docelowych ścian.
-checkWhiteCross :: CubeX -> Bool
-checkWhiteCross _ = False  -- do zaimplementowania
-
--- | Poprawia krawędzie białego krzyża
-fixWhiteEdges :: CubeWithLog2 -> CubeWithLog2
-fixWhiteEdges cwl =
-  -- tu np. zrzucamy złe krawędzie i wstawiamy je od dołu
-  cwl
-
-
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage2_WhiteCorners.hs =====
-module Stage2_WhiteCorners
-  ( solveWhiteCornersPhase
-  ) where
-
-import Prelude
-import RubikTypes
-import RubikRotations
-import RubikUtils
-
-solveWhiteCornersPhase :: CubeWithLog2 -> CubeWithLog2
-solveWhiteCornersPhase cwl =
-  let next = fixWhiteCorners cwl
-  in if checkWhiteCorners (fst next) then next
-                                     else solveWhiteCornersPhase next
-
-checkWhiteCorners :: CubeX -> Bool
-checkWhiteCorners _ = False  -- do wypełnienia
-
-fixWhiteCorners :: CubeWithLog2 -> CubeWithLog2
-fixWhiteCorners cwl = cwl  -- do wypełnienia
-
-
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage3_MiddleLayer.hs =====
-module Stage3_MiddleLayer
-  ( solveMiddleLayerPhase
-  ) where
-
-import Prelude
-import RubikTypes
-import RubikRotations
-import RubikUtils
-
-solveMiddleLayerPhase :: CubeWithLog2 -> CubeWithLog2
-solveMiddleLayerPhase cwl =
-  let attempt = fixMidlayer cwl
-  in if checkMidlayer (fst attempt) then attempt
-                                    else solveMiddleLayerPhase attempt
-
-checkMidlayer :: CubeX -> Bool
-checkMidlayer _ = False  -- do wypełnienia
-
-fixMidlayer :: CubeWithLog2 -> CubeWithLog2
-fixMidlayer cwl = cwl  -- do wypełnienia
-
-
-===== FILE: C:/Users/barte/OneDrive/Pulpit/Studia/ROK III/PF/RubikSolver\Stage4_LastLayer.hs =====
-module Stage4_LastLayer
-  ( solveLastLayerPhase
-  ) where
-
-import Prelude
-import RubikTypes
-import RubikRotations
-import RubikUtils
-
-solveLastLayerPhase :: CubeWithLog2 -> CubeWithLog2
-solveLastLayerPhase cwl =
-  let afterCross    = fixYellowCross cwl
-      afterCorners  = fixYellowCorners afterCross
-      afterEdges    = fixYellowEdges afterCorners
-  in afterEdges
-
-fixYellowCross :: CubeWithLog2 -> CubeWithLog2
-fixYellowCross cwl = cwl -- do wypełnienia
-
-fixYellowCorners :: CubeWithLog2 -> CubeWithLog2
-fixYellowCorners cwl = cwl
-
-fixYellowEdges :: CubeWithLog2 -> CubeWithLog2
-fixYellowEdges cwl = cwl
+-- | Mapuje listę ruchów na nową listę, stosując 'translateMoveWhiteDown'.
+translateMovesWhiteDown :: Side -> [Move] -> [Move]
+translateMovesWhiteDown side = map (translateMoveWhiteDown side)
 
 

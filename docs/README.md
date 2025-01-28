@@ -47,12 +47,12 @@ Side Kolor1 Kolor2 Kolor3 Kolor4 Kolor5 Kolor6 Kolor7 Kolor8 Kolor9
 Gdzie:
 - **Side** to jedna z wartości: `Front`, `Right`, `Back`, `Left`, `Up`, `Down`.
 - **ColorX** to jeden z kolorów:
-  - <span style="color:white;">White</span>
-  - <span style="color:yellow;">Yellow</span>
-  - <span style="color:red;">Red</span>
-  - <span style="color:orange;">Orange</span>
-  - <span style="color:blue;">Blue</span>
-  - <span style="color:green;">Green</span>
+  - ⚪ **White**
+  - 🟡 **Yellow**
+  - 🔴 **Red**
+  - 🟠 **Orange**
+  - 🔵 **Blue**
+  - 🟢 **Green**
 
 
 Przykładowy plik wejściowy:

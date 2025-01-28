@@ -18,12 +18,19 @@ W efekcie powstaje plik wykonywalny rubikSolver.
 
 
 Main.hs – punkt wejścia, parsowanie argumentów, główne uruchamianie rozwiązywania.
+
 AppUtils.hs – funkcje pomocnicze, wczytywanie/zapisywanie/formatowanie kostki.
+
 Rotations.hs – implementacje poszczególnych ruchów (U, R, F, itd.).
+
 Types.hs – definicje typów (Color, Side, Move, itp.).
+
 Utils.hs – funkcje pomocnicze (pobieranie ścian, getSide, replace itp.).
+
 Scramble.hs – generowanie scramble (losowych sekwencji ruchów).
+
 SolveWhiteCross.hs, SolveF2L.hs, SolveOLL.hs, SolvePLL.hs – etapy metody CFOP.
+
 Solving.hs – łączy poszczególne fazy w jedną funkcję solveCubePhases.
 
 

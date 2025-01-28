@@ -2,7 +2,7 @@
 
 ## 📌 Opis
 
-Program wczytuje opis kostki Rubika z pliku tekstowego (6 wierszy, po 9 kolorów każdy) i rozwiązuje ją w kilku fazach zgodnie z metodą **CFOP**:
+Program wczytuje opis kostki Rubika z pliku tekstowego (6 wierszy, po 9 kolorów każdy) i rozwiązuje ją w zgodnie z metodą **CFOP**:
 
 1. **White Cross** - biała krzyżówka
 2. **F2L** (First Two Layers) - pierwsze dwie warstwy

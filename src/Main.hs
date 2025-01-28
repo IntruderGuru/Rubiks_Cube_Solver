@@ -16,9 +16,9 @@ main = do
   if "--help" `elem` args
     then do
       putStrLn "Instrukcja użycia:"
-      putStrLn "  .\rubikSolver <plik_z_kostka.txt>"
-      putStrLn "  .\rubikSolver --scramble <liczba_ruchów> <plik_wyjściowy>"
-      putStrLn "  .\rubikSolver <plik_z_kostka.txt> --detailed"
+      putStrLn "  .\\rubikSolver <plik_z_kostka.txt>"
+      putStrLn "  .\\rubikSolver --scramble <liczba_ruchów> <plik_wyjściowy>"
+      putStrLn "  .\\rubikSolver <plik_z_kostka.txt> --detailed"
       putStrLn "  W pliku powinny znajdować się wiersze z: <Side> <9 kolorów> ..."
       putStrLn "  1. Ustaw kostkę fizycznie tak, aby górna (Up) była biała, a frontowa (Front) czerwona."
       putStrLn "  2. W pliku tekstowym wpisz kolejno ściany i 9 kolorów każdej z nich, np.:"
@@ -81,4 +81,4 @@ main = do
                 putStrLn "---------------------------------"
             )
             movesWithStates
-      [] -> putStrLn "Error: Please provide a file name or '--scramble <number_of_moves> [<output_file>]' as an argument."
+      [] -> putStrLn "Użyj .\\rubikSolver --help, aby uzyskać pomoc."

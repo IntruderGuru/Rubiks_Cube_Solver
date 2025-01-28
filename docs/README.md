@@ -90,6 +90,7 @@ Program wypisze standardową sekwencję ruchów, a następnie szczegółową lis
 
 - Jeśli podasz nazwę pliku, wylosowana kostka zostanie zapisana do tego pliku.
 - Jeśli nie podasz nazwy pliku, program tylko wyświetli kostkę i ruchy na ekranie.
+- **⚠️ Uwaga:** Warto wygenerować plik, a następnie użyć go do testów z opcją `--detailed`, gdyż układanie kostki fizycznej może być żmudne i podatne na pomyłki.
 
 ### ℹ️ Pomoc
 

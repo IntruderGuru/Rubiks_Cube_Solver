@@ -54,15 +54,19 @@ Gdzie:
   - 🔵 **Blue**
   - 🟢 **Green**
 
+Ważne: kostka jest rozwiązywana przy założeniu
+
+- czerwona ścianka - Front
+- biała ścianka - Up
 
 Przykładowy plik wejściowy:
 ```
-Front  White White White White White White White White White
-Right  Red Red Red Red Red Red Red Red Red
-Back   Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow
-Left   Orange Orange Orange Orange Orange Orange Orange Orange Orange
-Up     Blue Blue Blue Blue Blue Blue Blue Blue Blue
-Down   Green Green Green Green Green Green Green Green Green
+Front  Red Red Red Red Red Red Red Red Red
+Right  Blue Blue Blue Blue Blue Blue Blue Blue Blue
+Back   Orange Orange Orange Orange Orange Orange Orange Orange Orange
+Left   Green Green Green Green Green Green Green Green Green
+Up     White White White White White White White White White
+Down   Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow
 ```
 
 ---

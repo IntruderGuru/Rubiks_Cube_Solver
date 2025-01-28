@@ -11,6 +11,8 @@ Program wczytuje opis kostki Rubika z pliku tekstowego (6 wierszy, po 9 kolorów
 
 Sekwencje ruchów są następnie wyświetlane na ekran. Opcjonalnie w trybie szczegółowym (`--detailed`) można zobaczyć **kolejne stany kostki** po każdym ruchu.
 
+- **⚠️ Uwaga:** Warto wygenerować plik, a następnie użyć go do testów z opcją `--detailed`, gdyż układanie kostki fizycznej może być żmudne i podatne na pomyłki. Patrz: Generowanie scramble
+
 ---
 
 ## 🔧 Kompilacja

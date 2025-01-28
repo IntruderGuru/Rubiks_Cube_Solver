@@ -58,7 +58,7 @@ Gdzie:
 Przykładowy plik wejściowy:
 ```
 Front  White White White White White White White White White
-Right  Red Red Red  Red Red Red  Red Red Red
+Right  Red Red Red Red Red Red Red Red Red
 Back   Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow
 Left   Orange Orange Orange Orange Orange Orange Orange Orange Orange
 Up     Blue Blue Blue Blue Blue Blue Blue Blue Blue

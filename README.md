@@ -1,78 +1,104 @@
-## Opis
+# RubikSolver - Solver Kostki Rubika
 
-Program wczytuje opis kostki Rubika z pliku tekstowego (6 wierszy, po 9 kolorów każdy) i rozwiązuje ją w kilku fazach:
-1. White Cross
-2. F2L (First Two Layers)
-3. OLL (Orientation of the Last Layer)
-4. PLL (Permutation of the Last Layer)
+## 📌 Opis
 
-Sekwencje ruchów są następnie wyświetlane na ekran, opcjonalnie w trybie szczegółowym (`--detailed`) również **z kolejnymi stanami kostki** po każdym ruchu.
+Program wczytuje opis kostki Rubika z pliku tekstowego (6 wierszy, po 9 kolorów każdy) i rozwiązuje ją w kilku fazach zgodnie z metodą **CFOP**:
+
+1. **White Cross** - biała krzyżówka
+2. **F2L** (First Two Layers) - pierwsze dwie warstwy
+3. **OLL** (Orientation of the Last Layer) - orientacja ostatniej warstwy
+4. **PLL** (Permutation of the Last Layer) - permutacja ostatniej warstwy
+
+Sekwencje ruchów są następnie wyświetlane na ekran. Opcjonalnie w trybie szczegółowym (`--detailed`) można zobaczyć **kolejne stany kostki** po każdym ruchu.
 
 ---
 
-## Kompilacja
+## 🔧 Kompilacja
+
+Aby skompilować program, użyj komendy:
+```bash
 ghc Main.hs -o rubikSolver
-
-W efekcie powstaje plik wykonywalny rubikSolver.
-
-
-
-Main.hs – punkt wejścia, parsowanie argumentów, główne uruchamianie rozwiązywania.
-
-AppUtils.hs – funkcje pomocnicze, wczytywanie/zapisywanie/formatowanie kostki.
-
-Rotations.hs – implementacje poszczególnych ruchów (U, R, F, itd.).
-
-Types.hs – definicje typów (Color, Side, Move, itp.).
-
-Utils.hs – funkcje pomocnicze (pobieranie ścian, getSide, replace itp.).
-
-Scramble.hs – generowanie scramble (losowych sekwencji ruchów).
-
-SolveWhiteCross.hs, SolveF2L.hs, SolveOLL.hs, SolvePLL.hs – etapy metody CFOP.
-
-Solving.hs – łączy poszczególne fazy w jedną funkcję solveCubePhases.
+```
+W efekcie powstanie plik wykonywalny `rubikSolver`.
 
 
-## Format pliku wejściowego
-Plik tekstowy powinien zawierać 6 wierszy, z czego każdy opisuje jedną ściankę kostki.
+### 📁 Struktura kodu
 
-Format wiersza:
+- **Main.hs** – punkt wejścia programu, parsowanie argumentów, uruchamianie rozwiązywania.
+- **AppUtils.hs** – funkcje pomocnicze, wczytywanie/zapisywanie/formatowanie kostki.
+- **Rotations.hs** – implementacje poszczególnych ruchów (U, R, F, itd.).
+- **Types.hs** – definicje typów (`Color`, `Side`, `Move`, itp.).
+- **Utils.hs** – funkcje pomocnicze (pobieranie ścian, `getSide`, `replace`, itp.).
+- **Scramble.hs** – generowanie scramble (losowych sekwencji ruchów).
+- **SolveWhiteCross.hs, SolveF2L.hs, SolveOLL.hs, SolvePLL.hs** – poszczególne etapy metody CFOP.
+- **Solving.hs** – łączy poszczególne fazy w jedną funkcję `solveCubePhases`.
 
+---
+
+## 📄 Format pliku wejściowego
+
+Plik tekstowy powinien zawierać **6 wierszy**, z których każdy opisuje jedną ściankę kostki w formacie:
+
+```
 Side Kolor1 Kolor2 Kolor3 Kolor4 Kolor5 Kolor6 Kolor7 Kolor8 Kolor9
+```
 Gdzie:
+- **Side** to jedna z wartości: `Front`, `Right`, `Back`, `Left`, `Up`, `Down`.
+- **KolorX** to jeden z kolorów: `White`, `Yellow`, `Red`, `Orange`, `Blue`, `Green`.
 
-Side to jeden z: Front, Right, Back, Left, Up, Down.
-KolorX to jeden z: White, Yellow, Red, Orange, Blue, Green.
+Przykładowy plik wejściowy:
+```
+Front  White White White  White White White  White White White
+Right  Red Red Red  Red Red Red  Red Red Red
+Back   Yellow Yellow Yellow  Yellow Yellow Yellow  Yellow Yellow Yellow
+Left   Orange Orange Orange  Orange Orange Orange  Orange Orange Orange
+Up     Blue Blue Blue  Blue Blue Blue  Blue Blue Blue
+Down   Green Green Green  Green Green Green  Green Green Green
+```
 
-## Sposób użycia
+---
 
-Standardowe rozwiązanie kostki:
+## 🛠 Sposób użycia
 
+### ✅ Standardowe rozwiązanie kostki
+
+```bash
 rubikSolver <plik_z_kostka.txt>
-Wczyta kostkę i wypisze sekwencję ruchów (w 4 fazach CFOP).
+```
+Wczyta kostkę i wypisze sekwencję ruchów w 4 fazach CFOP.
 
-Wyświetlenie stanu kostki po każdym ruchu (--detailed):
+### 🔍 Tryb szczegółowy (`--detailed`)
 
-Uwaga: najpierw podaj nazwę pliku, potem flagę --detailed!
+Aby wyświetlić stan kostki po każdym ruchu:
 
+```bash
 rubikSolver <plik_z_kostka.txt> --detailed
+```
 
-Wypisze standardową sekwencję ruchów, a następnie szczegółową listę:
-Numer ruchu,
-Nazwę ruchu,
-Stan kostki (6 wierszy x 9 kolorów) po każdym ruchu.
+Program wypisze standardową sekwencję ruchów, a następnie szczegółową listę zawierającą:
+1. Numer ruchu
+2. Nazwę ruchu
+3. Stan kostki (6 wierszy x 9 kolorów) po każdym ruchu
 
+🔹 **Uwaga:** Najpierw podaj nazwę pliku, potem flagę `--detailed`!
 
-Generowanie scramble (losowe ułożenie):
+### 🎲 Generowanie scramble (losowego ułożenia)
 
+```bash
 rubikSolver --scramble <liczba_ruchów> [nazwa_pliku_wyjściowego]
+```
 
-Jeśli podasz nazwę pliku, wylosowana kostka zostanie zapisana do tego pliku.
-Jeśli nie podasz, program tylko wyświetli kostkę i ruchy na ekranie.
+- Jeśli podasz nazwę pliku, wylosowana kostka zostanie zapisana do tego pliku.
+- Jeśli nie podasz nazwy pliku, program tylko wyświetli kostkę i ruchy na ekranie.
 
-Pomoc:
+### ℹ️ Pomoc
 
+```bash
 rubikSolver --help
+```
 
-Wyświetla krótką instrukcję.
+Wyświetla krótką instrukcję obsługi programu.
+
+---
+
+🎯 **Gotowy do rozwiązania kostki Rubika? 🚀**

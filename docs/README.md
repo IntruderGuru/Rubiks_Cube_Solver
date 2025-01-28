@@ -21,7 +21,7 @@ Aby skompilować program, będąc w katalogu src użyj komendy:
 ```bash
 ghc Main.hs -o rubikSolver
 ```
-W efekcie powstanie plik wykonywalny `rubikSolver`.
+W efekcie powstanie plik wykonywalny `rubikSolver`. 
 
 
 ### 📁 Struktura kodu

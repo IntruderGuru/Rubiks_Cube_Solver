@@ -12,6 +12,7 @@ Sekwencje ruchów są następnie wyświetlane na ekran, opcjonalnie w trybie szc
 
 ## Kompilacja
 ghc Main.hs -o rubikSolver
+
 W efekcie powstaje plik wykonywalny rubikSolver.
 
 
@@ -28,7 +29,9 @@ Solving.hs – łączy poszczególne fazy w jedną funkcję solveCubePhases.
 
 ## Format pliku wejściowego
 Plik tekstowy powinien zawierać 6 wierszy, z czego każdy opisuje jedną ściankę kostki.
+
 Format wiersza:
+
 Side Kolor1 Kolor2 Kolor3 Kolor4 Kolor5 Kolor6 Kolor7 Kolor8 Kolor9
 Gdzie:
 
@@ -43,8 +46,11 @@ rubikSolver <plik_z_kostka.txt>
 Wczyta kostkę i wypisze sekwencję ruchów (w 4 fazach CFOP).
 
 Wyświetlenie stanu kostki po każdym ruchu (--detailed):
+
 Uwaga: najpierw podaj nazwę pliku, potem flagę --detailed!
+
 rubikSolver <plik_z_kostka.txt> --detailed
+
 Wypisze standardową sekwencję ruchów, a następnie szczegółową listę:
 Numer ruchu,
 Nazwę ruchu,
@@ -54,10 +60,12 @@ Stan kostki (6 wierszy x 9 kolorów) po każdym ruchu.
 Generowanie scramble (losowe ułożenie):
 
 rubikSolver --scramble <liczba_ruchów> [nazwa_pliku_wyjściowego]
+
 Jeśli podasz nazwę pliku, wylosowana kostka zostanie zapisana do tego pliku.
 Jeśli nie podasz, program tylko wyświetli kostkę i ruchy na ekranie.
 
 Pomoc:
 
 rubikSolver --help
+
 Wyświetla krótką instrukcję.

@@ -16,9 +16,6 @@ import Prelude hiding (Left, Right)
 --  Główna funkcja wykonująca etap OLL (Orientacja Ostatniej Warstwy):
 --   1) Ułożenie żółtego krzyża (krawędzi),
 --   2) Ułożenie (zorientowanie) żółtych rogów.
---
---  UWAGA: Jeśli w ramach OLL masz jeszcze inne kroki (np. pewne dodatkowe algorytmy
---  do pełnego orientowania rogów), możesz je tutaj dodać.
 solveOLL :: CubeWithMoves -> CubeWithMoves
 solveOLL cw =
   let cwCross = completeYellowCross cw -- ułożenie żółtego krzyża
@@ -136,8 +133,6 @@ areCornersProperlyColored cw =
 --  - Jeśli right !! 6 jest żółty i (countYellowCorners==0), robimy ...
 --  - Jeśli front !! 8 jest żółty i (countYellowCorners==2), robimy ...
 --  - inaczej obracamy dół [D] i próbujemy ponownie.
---
---  Zwróć uwagę, że to standardowa heurystyka OLL - jeśli masz inne algorytmy, można je podmienić.
 fixYellowCornersOrientation :: CubeWithMoves -> CubeWithMoves
 fixYellowCornersOrientation cw
   | down !! 2 == Yellow && (countYellowCorners cw == 1) =
@@ -168,10 +163,6 @@ isSideSolved cw side =
 --  Sprawdza, czy mamy "podwójnie dobrze" ustawione rogi na przeciwległych krawędziach:
 --    - (front !! 6 == Red && left !! 8 == Green && back !! 6 == Orange && right !! 8 == Blue)
 --    - (front !! 8 == Red && right !! 6 == Blue && back !! 8 == Orange && left !! 6 == Green)
---
---  Ta funkcja bywa używana w PLL (Permutation of the Last Layer),
---  ale czasem również w zaawansowanych etapach OLL. Jeśli tu nie jest wykorzystywana,
---  można ją zostawić jako pomocniczą lub przenieść do SolvePLL.
 hasTwoCorrectCorners :: CubeWithMoves -> Bool
 hasTwoCorrectCorners cw =
   ( front !! 6 == Red

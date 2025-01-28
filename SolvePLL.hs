@@ -59,8 +59,6 @@ areCornersCorrectlyPermuted cw =
 --  Sprawdza, czy dwie pary rogów są poprawnie ustawione na przeciwległych krawędziach:
 --     - (Front 6 == Red,   Left 8 == Green,  Back 6 == Orange, Right 8 == Blue)
 --     - (Front 8 == Red,   Right 6 == Blue,  Back 8 == Orange, Left 6 == Green)
---
---  Jeśli tak, w pewnych algorytmach PLL można użyć jednego kroku do dokończenia permutacji rogów.
 hasTwoCorrectCorners :: CubeWithMoves -> Bool
 hasTwoCorrectCorners cw =
   ( front !! 6 == Red
@@ -138,8 +136,6 @@ areEdgesCorrectlyPermuted cw =
 --    wykonujemy sekwencję [F,F, U, L, R', F,F, L', R, U, F,F] z translacją
 --    na ściance przeciwległej.
 --  - Jeśli żadna nie jest gotowa, wykonujemy ruch domyślny na Front.
---
---  (To jeden z typowych algorytmów PLL do permutowania krawędzi.)
 permuteEdgesStep :: CubeWithMoves -> CubeWithMoves
 permuteEdgesStep cw
   | isSideFullyColored cw Front =

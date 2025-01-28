@@ -85,7 +85,7 @@ Program wypisze standardową sekwencję ruchów, a następnie szczegółową lis
 ### 🎲 Generowanie scramble (losowego ułożenia)
 
 ```bash
-rubikSolver --scramble <liczba_ruchów> [nazwa_pliku_wyjściowego]
+rubikSolver --scramble <liczba_ruchów> <nazwa_pliku_wyjściowego>
 ```
 
 - Jeśli podasz nazwę pliku, wylosowana kostka zostanie zapisana do tego pliku.
@@ -100,5 +100,3 @@ rubikSolver --help
 Wyświetla krótką instrukcję obsługi programu.
 
 ---
-
-🎯 **Gotowy do rozwiązania kostki Rubika? 🚀**

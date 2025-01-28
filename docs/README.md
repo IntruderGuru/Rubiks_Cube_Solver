@@ -15,7 +15,7 @@ Sekwencje ruchów są następnie wyświetlane na ekran. Opcjonalnie w trybie szc
 
 ## 🔧 Kompilacja
 
-Aby skompilować program, użyj komendy:
+Aby skompilować program, będąc w katalogu src użyj komendy:
 ```bash
 ghc Main.hs -o rubikSolver
 ```
@@ -60,10 +60,10 @@ Down   Green Green Green  Green Green Green  Green Green Green
 
 ## 🛠 Sposób użycia
 
-### ✅ Standardowe rozwiązanie kostki
+### ✅ Standardowe rozwiązanie kostki będąc w katalogu src
 
 ```bash
-rubikSolver <plik_z_kostka.txt>
+.\rubikSolver <plik_z_kostka.txt>
 ```
 Wczyta kostkę i wypisze sekwencję ruchów w 4 fazach CFOP.
 
@@ -72,7 +72,7 @@ Wczyta kostkę i wypisze sekwencję ruchów w 4 fazach CFOP.
 Aby wyświetlić stan kostki po każdym ruchu:
 
 ```bash
-rubikSolver <plik_z_kostka.txt> --detailed
+.\rubikSolver <plik_z_kostka.txt> --detailed
 ```
 
 Program wypisze standardową sekwencję ruchów, a następnie szczegółową listę zawierającą:
@@ -85,7 +85,7 @@ Program wypisze standardową sekwencję ruchów, a następnie szczegółową lis
 ### 🎲 Generowanie scramble (losowego ułożenia)
 
 ```bash
-rubikSolver --scramble <liczba_ruchów> <nazwa_pliku_wyjściowego>
+.\rubikSolver --scramble <liczba_ruchów> <nazwa_pliku_wyjściowego>
 ```
 
 - Jeśli podasz nazwę pliku, wylosowana kostka zostanie zapisana do tego pliku.

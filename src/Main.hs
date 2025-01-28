@@ -37,7 +37,7 @@ main = do
           (outputFile : _) -> do
             -- Zapisuje kostkę do pliku
             let cubeStr = unlines (formatCube scrambledCube)
-            writeFile outputFile cubeStr
+            writeFile ("../data/" ++ outputFile) cubeStr
             putStrLn $ "Scramble zapisany do pliku: " ++ outputFile
             putStrLn "=== Losowe Ułożenie Kostki ==="
             mapM_ putStrLn (formatCube scrambledCube)
@@ -50,7 +50,7 @@ main = do
 
       -- Obsługa standardowa: plik z kostką do rozwiązania (oraz opcjonalne --detailed)
       (fileName : _) -> do
-        content <- readFile fileName
+        content <- readFile ("../data/" ++ fileName)
         let fileLines = lines content
         let initialCube = readCube fileLines []
 

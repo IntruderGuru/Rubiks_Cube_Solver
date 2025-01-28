@@ -57,12 +57,12 @@ Gdzie:
 
 Przykładowy plik wejściowy:
 ```
-Front  White White White  White White White  White White White
+Front  White White White White White White White White White
 Right  Red Red Red  Red Red Red  Red Red Red
-Back   Yellow Yellow Yellow  Yellow Yellow Yellow  Yellow Yellow Yellow
-Left   Orange Orange Orange  Orange Orange Orange  Orange Orange Orange
-Up     Blue Blue Blue  Blue Blue Blue  Blue Blue Blue
-Down   Green Green Green  Green Green Green  Green Green Green
+Back   Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow Yellow
+Left   Orange Orange Orange Orange Orange Orange Orange Orange Orange
+Up     Blue Blue Blue Blue Blue Blue Blue Blue Blue
+Down   Green Green Green Green Green Green Green Green Green
 ```
 
 ---
